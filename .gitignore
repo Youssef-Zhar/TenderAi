@@ -1,19 +1,24 @@
-@"
+
+# Environment variables and secrets
 .env
 **/.env
+
+# Python virtual environments
 .venv/
 **/.venv/
+
+# Python cache
 __pycache__/
 **/__pycache__/
 *.py[cod]
-.pytest_cache/
-**/.pytest_cache/
-.vscode/
-.idea/
-"@ | Set-Content -Encoding utf8 .gitignore
+
 # Pytest cache
 .pytest_cache/
 **/.pytest_cache/
+
+# Editors
+.vscode/
+.idea/
 
 # Backup files
 *.bak
