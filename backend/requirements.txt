@@ -1,0 +1,13 @@
+# TenderAI backend dependencies
+# Install with: .venv\Scripts\pip.exe install -r requirements.txt
+
+fastapi==0.115.12
+uvicorn==0.34.0
+python-multipart==0.0.20        # required for UploadFile (file uploads)
+pydantic==2.11.3
+pydantic-settings==2.9.1
+sqlalchemy==2.0.40
+pymysql==1.1.1
+python-dotenv==1.1.0
+httpx==0.28.1                   # async HTTP client — used for OpenRouter calls
+pymupdf==1.25.5                 # PDF text extraction (fitz)

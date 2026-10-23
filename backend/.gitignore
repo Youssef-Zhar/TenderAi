@@ -1,0 +1,23 @@
+# Environment — NEVER commit secrets
+.env
+
+# Python virtual environment
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Editor / OS
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Pytest / coverage artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Logs
+*.log

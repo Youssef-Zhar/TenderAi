@@ -1,0 +1,19 @@
+@"
+.env
+**/.env
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+**/.pytest_cache/
+.vscode/
+.idea/
+"@ | Set-Content -Encoding utf8 .gitignore
+# Pytest cache
+.pytest_cache/
+**/.pytest_cache/
+
+# Backup files
+*.bak
