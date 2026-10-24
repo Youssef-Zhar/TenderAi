@@ -9,5 +9,6 @@ pydantic-settings==2.9.1
 sqlalchemy==2.0.40
 pymysql==1.1.1
 python-dotenv==1.1.0
-httpx==0.28.1                   # async HTTP client — used for OpenRouter calls
+google-genai==2.33.0            # official Google Gemini SDK — AI analysis calls
+httpx==0.28.1                   # async HTTP client (transport errors for Gemini retries)
 pymupdf==1.25.5                 # PDF text extraction (fitz)

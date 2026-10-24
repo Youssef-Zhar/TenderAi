@@ -22,13 +22,10 @@ class _Settings:
     db_user: str = os.getenv("DB_USER", "")
     db_password: str = os.getenv("DB_PASSWORD", "")
 
-    # --- OpenRouter ---
-    openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
-    openrouter_base_url: str = os.getenv(
-        "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
-    )
-    openrouter_model: str = os.getenv(
-        "OPENROUTER_MODEL", ""
+    # --- Google Gemini ---
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    gemini_model: str = os.getenv(
+        "GEMINI_MODEL", "gemini-3.5-flash-lite"
     )
 
 

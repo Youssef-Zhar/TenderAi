@@ -14,18 +14,40 @@ POST   /api/v1/tenders/analyze-pdf  — upload a PDF and analyse it with AI
 """
 
 from io import BytesIO
+from pathlib import Path
+
+import logging
 
 import fitz  # PyMuPDF
-import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.tender import Tender
-from app.schemas.analysis import AnalysisResult, AnalyzeResponse
+from app.models.tender_condition import TenderCondition
+from app.models.tender_document import TenderDocument
+from app.models.tender_criterion import TenderCriterion
+from app.models.tender_evidence import TenderEvidence
+from app.schemas.analysis import (
+    AnalysisMetadata,
+    AnalysisResult,
+    AnalyzeResponse,
+    StructuredTenderAnalysis,
+)
 from app.schemas.tender import TenderCreate, TenderResponse
-from app.services.ai_analyzer import analyze_tender
+from app.services.ai_analyzer import (
+    AIConnectionError,
+    AIStatusError,
+    AITimeoutError,
+    analysis_status,
+    analyze_tender,
+    build_analysis_metadata,
+    extract_structured_tender,
+)
+from app.services.deadline_parser import parse_deadline
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/v1/tenders",
@@ -33,6 +55,28 @@ router = APIRouter(
 )
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+_DEADLINE_LABELS = (
+    "date limite de remise des offres",
+    "date limite de réception des offres",
+    "date limite de depot des offres",
+    "date limite de dépôt des offres",
+    "date limite de soumission",
+    "dernier delai de remise des offres",
+    "dernier délai de remise des offres",
+)
+
+
+def _parse_deadline_from_document(text: str):
+    """Extract a deadline only from lines explicitly labelled as submission deadlines."""
+    for line in text.splitlines():
+        normalized_line = line.casefold()
+
+        if any(label in normalized_line for label in _DEADLINE_LABELS):
+            parsed = parse_deadline(line)
+            if parsed is not None:
+                return parsed
+
+    return None
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
@@ -160,6 +204,7 @@ def delete_tender(
     db.commit()
 
 
+
 # ── PDF Analysis route ────────────────────────────────────────────────────────
 
 @router.post(
@@ -170,20 +215,10 @@ def delete_tender(
 )
 async def analyze_pdf(
     file: UploadFile = File(...),
+    db: Session = Depends(get_db),
 ) -> AnalyzeResponse:
-    """
-    Upload a PDF tender document and receive an AI-generated analysis.
+    """Analyse a PDF and save its structured data to the database."""
 
-    Steps performed:
-    1. Validate file type (must be PDF) and size (max 10 MB).
-    2. Extract text from every page with PyMuPDF.
-    3. Detect scanned PDFs with no selectable text (OCR required).
-    4. Send the extracted text to OpenRouter for structured analysis.
-    5. Return the analysis result.
-
-    The analysis is NOT automatically saved to the database.
-    Use POST /api/v1/tenders/ if you want to store the record afterwards.
-    """
     # 1. Validate file extension
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
@@ -191,22 +226,23 @@ async def analyze_pdf(
             detail="Please upload a PDF file.",
         )
 
-    # 2. Read and check file size (read one extra byte to detect oversize)
+    # 2. Validate file size
     content = await file.read(MAX_FILE_SIZE + 1)
+
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="The PDF must not exceed 10 MB.",
         )
 
-    # 3. Check PDF magic bytes
+    # 3. Validate PDF signature
     if not content.startswith(b"%PDF-"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The uploaded file does not appear to be a valid PDF.",
         )
 
-    # 4. Extract text with PyMuPDF
+    # 4. Extract text from PDF pages
     try:
         with fitz.open(stream=BytesIO(content), filetype="pdf") as pdf:
             if pdf.is_encrypted:
@@ -217,10 +253,10 @@ async def analyze_pdf(
 
             pages = [
                 {
-                    "page": page_number,
+                    "page": number,
                     "text": page.get_text("text").strip(),
                 }
-                for page_number, page in enumerate(pdf, start=1)
+                for number, page in enumerate(pdf, start=1)
             ]
 
     except HTTPException:
@@ -231,9 +267,9 @@ async def analyze_pdf(
             detail="Could not read this PDF. It may be corrupted.",
         ) from exc
 
-    pages_with_text = sum(1 for p in pages if p["text"])
+    pages_with_text = sum(1 for page in pages if page["text"])
 
-    # 5. Detect scanned PDF (no extractable text)
+    # 5. Scanned PDF detection
     if pages_with_text == 0:
         return AnalyzeResponse(
             filename=file.filename,
@@ -241,43 +277,45 @@ async def analyze_pdf(
             pages_with_text=0,
             analysis=AnalysisResult(
                 status="ocr_required",
-                model=settings.openrouter_model,
+                model=settings.gemini_model,
                 report=(
-                    "No selectable text was found in this PDF. "
-                    "It is likely a scanned document. "
+                    "No selectable text was found. "
                     "OCR processing is required but not yet supported."
                 ),
             ),
         )
 
-    # 6. Build page-marked text and call AI analyzer
+    # 6. Prepare text with page numbers
     document_text = "\n\n".join(
-        f"--- Page {p['page']} ---\n{p['text']}"
-        for p in pages
-        if p["text"]
+        f"--- Page {page['page']} ---\n{page['text']}"
+        for page in pages
+        if page["text"]
     )
 
-    try:
-        report = await analyze_tender(document_text)
+    # 7. Ask AI to generate the report and structured data.
+    # The report is generated first so a valid report is never discarded when
+    # structured extraction degrades or fails.
+    metadata = AnalysisMetadata()
 
-    except httpx.ConnectError as exc:
+    try:
+        report = await analyze_tender(document_text, metadata=metadata)
+
+    except AIConnectionError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Cannot connect to OpenRouter. Check your internet connection.",
+            detail="Cannot connect to the Gemini API. Check your internet connection.",
         ) from exc
 
-    except httpx.TimeoutException as exc:
+    except AITimeoutError as exc:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="OpenRouter took too long to respond. Try again with a smaller document.",
+            detail="Gemini took too long to respond.",
         ) from exc
 
-    except httpx.HTTPStatusError as exc:
-        # Surface the HTTP status from OpenRouter for easier debugging
+    except AIStatusError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"OpenRouter returned HTTP {exc.response.status_code}. "
-                   "Check your API key and model name in .env.",
+            detail=f"Gemini returned HTTP {exc.status_code}.",
         ) from exc
 
     except (ValueError, RuntimeError) as exc:
@@ -286,13 +324,107 @@ async def analyze_pdf(
             detail=str(exc),
         ) from exc
 
+    try:
+        structured = await extract_structured_tender(
+            document_text, metadata=metadata
+        )
+    except (AIConnectionError, AITimeoutError, AIStatusError, ValueError, RuntimeError) as exc:
+        # Structured extraction failed but the report is valid: degrade rather
+        # than failing the whole request.
+        logger.warning("Structured extraction failed: %s", exc)
+        metadata.structured_failed = True
+        structured = StructuredTenderAnalysis()
+
+    build_analysis_metadata(metadata, structured)
+    analysis_status_value = analysis_status(metadata)
+
+    # 8. Parse the deadline only when its format is recognized
+    parsed_deadline = parse_deadline(structured.tender.deadline)
+    if parsed_deadline is None:
+        parsed_deadline = _parse_deadline_from_document(document_text)
+    # The existing database requires both title and description.
+    title = (
+        structured.tender.title or Path(file.filename).stem
+    )[:200]
+
+    tender = Tender(
+        title=title,
+        description=report,
+        estimated_budget=structured.tender.estimated_budget,
+        deadline=parsed_deadline,
+    )
+
+    # 9. Save the tender and its related records atomically
+    try:
+        db.add(tender)
+        db.flush()
+
+        for item in structured.conditions:
+            db.add(
+                TenderCondition(
+                    tender_id=tender.id,
+                    condition_type=item.condition_type,
+                    description=item.description,
+                )
+            )
+
+        for item in structured.documents:
+            db.add(
+                TenderDocument(
+                    tender_id=tender.id,
+                    name=item.name,
+                    description=item.description,
+                    is_mandatory=item.is_mandatory,
+                )
+            )
+
+        for item in structured.criteria:
+            db.add(
+                TenderCriterion(
+                    tender_id=tender.id,
+                    name=item.name,
+                    description=item.description,
+                    weight=item.weight,
+                )
+            )
+
+        # Persist only evidence returned by the verification pipeline.
+        # Scalar fields are never turned into synthetic evidence rows, and
+        # items without a verified source quote and page are skipped.
+        for item in structured.evidence:
+            if not item.source_text or item.page_number is None:
+                continue
+            db.add(
+                TenderEvidence(
+                    tender_id=tender.id,
+                    field_name=item.field_name,
+                    extracted_value=item.extracted_value,
+                    page_number=item.page_number,
+                    source_text=item.source_text,
+                )
+            )
+
+        db.commit()
+        db.refresh(tender)
+
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not save the analysis to the database.",
+        ) from exc
+
+    # 10. Return the analysis and the saved record ID
     return AnalyzeResponse(
         filename=file.filename,
         page_count=len(pages),
         pages_with_text=pages_with_text,
+        tender_id=tender.id,
         analysis=AnalysisResult(
-            status="analysis_completed",
-            model=settings.openrouter_model,
+            status=analysis_status_value,
+            model=settings.gemini_model,
             report=report,
+            structured_data=structured,
+            metadata=metadata,
         ),
     )

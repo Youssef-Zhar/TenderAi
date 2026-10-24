@@ -1,10 +1,13 @@
-
 from fastapi import FastAPI
 
 from app.api.routes.tenders import router as tenders_router
 from app.db.base import Base
 from app.db.session import engine
 from app.models.tender import Tender
+from app.models.tender_condition import TenderCondition
+from app.models.tender_document import TenderDocument
+from app.models.tender_criterion import TenderCriterion
+from app.models.tender_evidence import TenderEvidence
 
 Base.metadata.create_all(bind=engine)
 
