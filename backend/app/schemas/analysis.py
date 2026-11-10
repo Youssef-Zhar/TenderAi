@@ -1,11 +1,11 @@
 
-from pydantic import BaseModel, Field
-
+from pydantic import BaseModel, ConfigDict, Field
 
 class TenderDetails(BaseModel):
     title: str | None = None
     reference: str | None = None
     contracting_authority: str | None = None
+    model_config = ConfigDict(allow_inf_nan=False)
     estimated_budget: float | None = None
     currency: str | None = None
     deadline: str | None = None
@@ -37,6 +37,7 @@ class TenderCriterionItem(BaseModel):
     name: str
     description: str | None = None
     weight: float | None = None
+    model_config = ConfigDict(allow_inf_nan=False)
 
 
 class TenderEvidenceItem(BaseModel):
@@ -52,6 +53,7 @@ class ExtractionConflictItem(BaseModel):
     second_value: str | int | float | None = None
     first_chunk_index: int | None = None
     second_chunk_index: int | None = None
+    model_config = ConfigDict(allow_inf_nan=False)
 
 
 class StructuredTenderAnalysis(BaseModel):

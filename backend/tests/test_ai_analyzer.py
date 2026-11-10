@@ -16,7 +16,16 @@ import httpx
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 
+from contextlib import asynccontextmanager
+from decimal import Decimal
+
+from app.core.config import settings
+from app.services.ai_analyzer import _create_client, _open_client
+from app.services.ai_analyzer import _build_page_map
+from app.schemas.tender import TenderInput
+
 from app.services.ai_analyzer import (
+    analyze_tender,
     split_document,
     _call_gemini,
     _extract_chunk,
@@ -26,6 +35,12 @@ from app.services.ai_analyzer import (
     MAX_CHUNK_CHARS,
     CHUNK_OUTPUT_TOKENS,
     FINAL_OUTPUT_TOKENS,
+    AIFinishReasonError,
+    _get_retry_delay,
+    _clean_int,
+    _money_signature,
+    _deadline_signature,
+    ChunkExtractionStatus,
 )
 
 
@@ -168,6 +183,33 @@ async def test_call_gemini_maps_max_tokens_to_length_without_raising():
     assert finish_reason == "length"
     assert content == "Rapport partiel…"
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "finish_reason",
+    [
+        genai_types.FinishReason.SAFETY,
+        genai_types.FinishReason.RECITATION,
+        genai_types.FinishReason.BLOCKLIST,
+        genai_types.FinishReason.OTHER,
+    ],
+)
+async def test_call_gemini_raises_on_unexpected_finish_reason(finish_reason):
+    client = _make_gemini_client(
+        _make_gemini_response("Blocked or incomplete response.", finish_reason)
+    )
+
+    with pytest.raises(AIFinishReasonError):
+        await _call_gemini(client, "sys", "user", 100)
+
+
+@pytest.mark.asyncio
+async def test_call_gemini_raises_when_finish_reason_is_missing():
+    response = _make_gemini_response("Some response.")
+    response.candidates[0].finish_reason = None
+    client = _make_gemini_client(response)
+
+    with pytest.raises(AIFinishReasonError, match="UNKNOWN"):
+        await _call_gemini(client, "sys", "user", 100)
 
 @pytest.mark.asyncio
 async def test_call_gemini_raises_on_empty_content():
@@ -352,6 +394,95 @@ async def test_extract_chunk_propagates_connection_error(monkeypatch):
     with pytest.raises(AIConnectionError):
         await _extract_chunk(client, "chunk", 1, 1)
 
+@pytest.mark.asyncio
+async def test_extract_chunk_records_fallback_used():
+    client = _make_gemini_client([
+        _make_gemini_response("Partial", genai_types.FinishReason.MAX_TOKENS),
+        _make_gemini_response("Complete fallback", genai_types.FinishReason.STOP),
+    ])
+    status = ChunkExtractionStatus()
+
+    result = await _extract_chunk(client, "chunk", 1, 1, status)
+
+    assert "[FALLBACK" in result
+    assert status.fallback_used is True
+    assert status.truncated is False
+
+
+@pytest.mark.asyncio
+async def test_extract_chunk_records_both_attempts_truncated():
+    client = _make_gemini_client([
+        _make_gemini_response("Partial 1", genai_types.FinishReason.MAX_TOKENS),
+        _make_gemini_response("Partial 2", genai_types.FinishReason.MAX_TOKENS),
+    ])
+    status = ChunkExtractionStatus()
+
+    result = await _extract_chunk(client, "chunk", 1, 1, status)
+
+    assert "[PARTIAL" in result
+    assert status.fallback_used is True
+    assert status.truncated is True
+
+def test_get_retry_delay_returns_none_when_retry_after_exceeds_limit():
+    exc = MagicMock()
+    exc.response.headers = {"Retry-After": "60"}
+
+    assert _get_retry_delay(exc, attempt=1) is None
+
+
+def test_get_retry_delay_uses_fallback_for_invalid_retry_after():
+    exc = MagicMock()
+    exc.response.headers = {"Retry-After": "invalid-value"}
+
+    assert _get_retry_delay(exc, attempt=2) == 1.0
+
+
+def test_get_retry_delay_clamps_negative_retry_after_to_zero():
+    exc = MagicMock()
+    exc.response.headers = {"Retry-After": "-5"}
+
+    assert _get_retry_delay(exc, attempt=1) == 0
+
+def test_get_retry_delay_handles_http_date_without_timezone():
+    from email.utils import formatdate
+
+    exc = MagicMock()
+    exc.response.headers = {
+        "Retry-After": formatdate(usegmt=True).removesuffix(" GMT")
+    }
+
+    delay = _get_retry_delay(exc, attempt=1)
+
+    assert delay is not None
+    assert 0 <= delay <= 30
+
+@pytest.mark.asyncio
+async def test_call_gemini_skips_retry_when_retry_after_exceeds_limit(monkeypatch):
+    import app.services.ai_analyzer as analyzer
+    import httpx
+
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr(analyzer.asyncio, "sleep", sleep_mock)
+
+    response = httpx.Response(
+        503,
+        headers={"Retry-After": "60"},
+    )
+
+    overloaded = genai_errors.ServerError(
+        code=503,
+        response_json={"error": {"message": "Service temporarily overloaded"}},
+        response=response,
+    )
+
+    client = _make_gemini_error_client(overloaded)
+
+    with pytest.raises(AIStatusError) as exc_info:
+        await _call_gemini(client, "sys", "user", 200)
+
+    assert exc_info.value.status_code == 503
+    assert client.aio.models.generate_content.call_count == 1
+    sleep_mock.assert_not_awaited()
 
 # ── Token budget sanity guards ────────────────────────────────────────────────
 
@@ -368,6 +499,7 @@ from app.schemas.analysis import (
     AnalysisMetadata,
     ExtractionConflictItem,
     StructuredTenderAnalysis,
+    TenderCriterionItem,
     TenderDetails,
 )
 from app.services.ai_analyzer import (
@@ -433,6 +565,67 @@ class TestTechnicalSpecifications:
         assert details.screen_size_inches == 15.6
         assert details.warranty_months == 24
         assert details.accessories == ["charger", "laptop bag"]
+
+    @pytest.mark.parametrize(
+        "value",
+        [float("inf"), float("-inf"), float("nan")],
+    )
+    def test_screen_size_rejects_non_finite_values(self, value):
+        with pytest.raises(ValidationError):
+            TenderDetails(screen_size_inches=value)
+
+    @pytest.mark.parametrize(
+        "value",
+        [float("inf"), float("-inf"), float("nan")],
+    )
+    def test_estimated_budget_rejects_non_finite_values(self, value):
+        with pytest.raises(ValidationError):
+            TenderInput(
+                title="Valid title",
+                description="This is a sufficiently long description",
+                estimated_budget=value,
+            )
+    @pytest.mark.parametrize(
+        "value",
+        [float("inf"), float("-inf"), float("nan")],
+    )
+    def test_criterion_weight_rejects_non_finite_values(self, value):
+        with pytest.raises(ValidationError):
+            TenderCriterionItem(name="Price", weight=value)
+
+    @pytest.mark.parametrize(
+        "value",
+        [float("inf"), float("-inf"), float("nan")],
+    )
+    def test_extraction_conflict_rejects_non_finite_values(self, value):
+        with pytest.raises(ValidationError):
+            ExtractionConflictItem(
+                field_name="estimated_budget",
+                first_value=value,
+            )
+    @pytest.mark.parametrize(
+        "value",
+        [float("inf"), float("-inf"), float("nan")],
+    )
+    def test_normalizer_rejects_non_finite_screen_size(self, value):
+        result = _normalise_structured_payload({
+            "tender": {
+                "screen_size_inches": value,
+            }
+        })
+
+        assert result["tender"]["screen_size_inches"] is None
+
+    def test_normalizer_preserves_valid_screen_size(self):
+        result = _normalise_structured_payload({
+            "tender": {
+                "screen_size_inches": 15.6,
+            }
+        })
+
+        assert result["tender"]["screen_size_inches"] == 15.6
+
+
 
     def test_missing_technical_specifications_use_defaults(self):
         details = TenderDetails(title="Tender without technical details")
@@ -607,6 +800,7 @@ def test_deadline_date_formats(deadline_text, expected):
         "   ",
         "date inconnue",
         "31/02/2026",          # invalid calendar day
+        "31 février 2026",    # invalid textual calendar date
         "15 xambruary 2026",   # unknown month
     ],
 )
@@ -666,6 +860,82 @@ def _payload_with_evidence(*items):
     payload = _technical_payload()
     payload["evidence"] = list(items)
     return payload
+
+@pytest.mark.asyncio
+async def test_extract_structured_tender_deduplicates_merged_collections():
+    first = _technical_payload()
+    first["conditions"] = [
+        {"condition_type": "experience", "description": "5 ans"},
+        {"condition_type": "experience", "description": "5 ans"},
+        {"condition_type": "experience", "description": "3 ans"},
+    ]
+    first["documents"] = [
+        {
+            "name": "CPS",
+            "description": "Cahier des prescriptions spéciales",
+            "is_mandatory": True,
+        },
+        {
+            "name": "CPS",
+            "description": "Cahier des prescriptions spéciales",
+            "is_mandatory": True,
+        },
+    ]
+    first["criteria"] = [
+        {"name": "Prix", "description": "Offre financière", "weight": 60},
+        {"name": "Prix", "description": "Offre financière", "weight": 60},
+        {"name": "Prix", "description": "Offre financière", "weight": 40},
+    ]
+    first["evidence"] = [
+        {
+            "field_name": "quantity",
+            "extracted_value": "10",
+            "page_number": 1,
+            "source_text": "Quantité : 10",
+        },
+        {
+            "field_name": "quantity",
+            "extracted_value": "10",
+            "page_number": 1,
+            "source_text": "Quantité : 10",
+        },
+    ]
+
+    second = _technical_payload()
+    second["documents"] = [
+        {
+            "name": "CPS",
+            "description": "Cahier des prescriptions spéciales",
+            "is_mandatory": False,
+        }
+    ]
+    second["evidence"] = [
+        {
+            "field_name": "quantity",
+            "extracted_value": "20",
+            "page_number": 1,
+            "source_text": "Quantité : 20",
+        }
+    ]
+
+    document_text = (
+        "--- Page 1 ---\n"
+        "Quantité : 10\n"
+        "Quantité : 20"
+    )
+
+    result = await _run_structured_extraction(
+        [json.dumps(first), json.dumps(second)],
+        ["chunk 1", "chunk 2"],
+        document_text=document_text,
+    )
+
+    assert len(result.conditions) == 2
+    assert len(result.documents) == 2
+    assert len(result.criteria) == 2
+    assert len(result.evidence) == 2
+    assert result.verified_evidence_count == 2
+    assert result.rejected_evidence_count == 0
 
 
 @pytest.mark.asyncio
@@ -1010,6 +1280,29 @@ async def test_verify_evidence_rejects_missing_quote():
     assert result.corrected_page_count == 0
     assert result.ambiguous_evidence_count == 0
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source_text", ["", "   ", "\n\t"])
+async def test_verify_evidence_rejects_empty_quote(source_text):
+    document = "--- Page 1 ---\nBudget estimé : 250 000 MAD"
+
+    payload = _payload_with_evidence(
+        {
+            "field_name": "estimated_budget",
+            "extracted_value": "250000",
+            "page_number": 1,
+            "source_text": source_text,
+        }
+    )
+
+    result = await _run_structured_extraction(
+        [json.dumps(payload)], ["chunk"], document_text=document
+    )
+
+    assert result.evidence == []
+    assert result.verified_evidence_count == 0
+    assert result.rejected_evidence_count == 1
+    assert result.corrected_page_count == 0
+    assert result.ambiguous_evidence_count == 0
 
 @pytest.mark.asyncio
 async def test_verify_evidence_marks_ambiguous_quotes():
@@ -1132,6 +1425,33 @@ async def test_analyze_tender_records_explicit_chunk_status():
     assert metadata.fallback_used is True
     assert metadata.report_truncated is False
 
+@pytest.mark.asyncio
+async def test_analyze_tender_records_explicit_chunk_truncation():
+    metadata = AnalysisMetadata()
+
+    def evidence_with_truncation(status):
+        status.truncated = True
+        return "Evidence was truncated"
+
+    await _run_analyze_tender(
+        evidence_with_truncation,
+        metadata=metadata,
+    )
+
+    assert metadata.report_truncated is True
+    assert metadata.fallback_used is False
+
+@pytest.mark.asyncio
+async def test_analyze_tender_detects_legacy_fallback_marker():
+    metadata = AnalysisMetadata()
+
+    await _run_analyze_tender(
+        "[FALLBACK] Evidence extracted using fallback",
+        metadata=metadata,
+    )
+
+    assert metadata.fallback_used is True
+    assert metadata.report_truncated is False
 
 @pytest.mark.asyncio
 async def test_analyze_tender_detects_legacy_partial_marker():
@@ -1181,7 +1501,12 @@ async def _run_structured_metadata(responses, chunks, document_text, metadata):
     async def fake_call_gemini(
         client, system_prompt, user_message, max_tokens
     ):
-        return next(response_iter)
+        response = next(response_iter)
+
+        if isinstance(response, BaseException):
+            raise response
+
+        return response
 
     with (
         patch.object(ai_analyzer, "split_document", return_value=list(chunks)),
@@ -1271,6 +1596,63 @@ async def test_extract_structured_tender_keeps_validated_partial_on_failure():
     assert result.tender.quantity == 10
     assert metadata.structured_failed is True
 
+@pytest.mark.asyncio
+async def test_extract_structured_tender_keeps_partial_on_gemini_429():
+    from app.services import ai_analyzer
+
+    metadata = AnalysisMetadata()
+    valid = json.dumps(
+        _technical_payload(title="Marché partiel", quantity=10)
+    )
+
+    result = await _run_structured_metadata(
+        [
+            (valid, "stop"),
+            ai_analyzer.AIStatusError(429, "Rate limit exceeded"),
+        ],
+        ["chunk 1", "chunk 2"],
+        "text for testing",
+        metadata,
+    )
+
+    assert result.tender.title == "Marché partiel"
+    assert result.tender.quantity == 10
+    assert metadata.structured_failed is True
+
+@pytest.mark.asyncio
+async def test_extract_structured_tender_handles_evidence_extraction_failure():
+    from app.services import ai_analyzer
+
+    metadata = AnalysisMetadata()
+
+    async def fake_extract_chunk(client, chunk, index, total, status=None):
+        if index == 1:
+            return "Evidence for first chunk"
+        raise ai_analyzer.AIConnectionError("Connection failed")
+
+    valid = json.dumps(
+        _technical_payload(title="Marché partiel", quantity=10)
+    )
+
+    async def fake_call_gemini(
+        client, system_prompt, user_message, max_tokens
+    ):
+        return valid, "stop"
+
+    with (
+        patch.object(ai_analyzer, "split_document", return_value=["chunk 1", "chunk 2"]),
+        patch.object(ai_analyzer, "_extract_chunk", side_effect=fake_extract_chunk),
+        patch.object(ai_analyzer, "_call_gemini", side_effect=fake_call_gemini),
+        patch.object(ai_analyzer, "_open_client", return_value=_fake_open_client()),
+    ):
+        result = await ai_analyzer.extract_structured_tender(
+            "text for testing",
+            metadata=metadata,
+        )
+
+    assert result.tender.title == "Marché partiel"
+    assert result.tender.quantity == 10
+    assert metadata.structured_failed is True
 
 @pytest.mark.asyncio
 async def test_extract_structured_tender_raises_on_invalid_json_without_metadata():
@@ -1293,6 +1675,29 @@ async def test_extract_structured_tender_raises_on_invalid_json_without_metadata
 
         with pytest.raises(RuntimeError):
             await ai_analyzer.extract_structured_tender("text")
+
+@pytest.mark.asyncio
+async def test_extract_structured_tender_raises_on_gemini_429_without_metadata():
+    from app.services import ai_analyzer
+
+    async def fake_extract_chunk(client, chunk, index, total, status=None):
+        return "Evidence"
+
+    async def fake_call_gemini(
+        client, system_prompt, user_message, max_tokens
+    ):
+        raise ai_analyzer.AIStatusError(429, "Rate limit exceeded")
+
+    with (
+        patch.object(ai_analyzer, "split_document", return_value=["chunk"]),
+        patch.object(ai_analyzer, "_extract_chunk", side_effect=fake_extract_chunk),
+        patch.object(ai_analyzer, "_call_gemini", side_effect=fake_call_gemini),
+        patch.object(ai_analyzer, "_open_client", return_value=_fake_open_client()),
+    ):
+        with pytest.raises(ai_analyzer.AIStatusError) as exc_info:
+            await ai_analyzer.extract_structured_tender("text")
+
+    assert exc_info.value.status_code == 429
 
 
 def test_build_analysis_metadata_completed_has_no_reasons():
@@ -1473,7 +1878,9 @@ def test_normalise_structured_payload_stringifies_numeric_evidence():
 
     normalised = _normalise_structured_payload(payload)
 
+    assert isinstance(normalised, dict)
     values = [item["extracted_value"] for item in normalised["evidence"]]
+
     assert values == ["250000", "500", "16", "512", "15.6", "24"]
     assert all(isinstance(value, str) for value in values)
 
@@ -1495,6 +1902,7 @@ def test_normalise_structured_payload_keeps_tender_numbers_native():
     assert tender["storage_gb"] == 512
     assert tender["screen_size_inches"] == 15.6
     assert tender["warranty_months"] == 24
+    assert isinstance(normalised, dict)
 
 
 def test_normalise_structured_payload_rejects_non_scalar_evidence_values():
@@ -1518,9 +1926,9 @@ def test_normalise_structured_payload_rejects_non_scalar_evidence_values():
 
     assert normalised["evidence"][0]["extracted_value"] == [1, 2]
     assert normalised["evidence"][1]["extracted_value"] == {"a": 1}
+    assert isinstance(normalised, dict)
     with pytest.raises(ValidationError):
         StructuredTenderAnalysis.model_validate(normalised)
-
 
 @pytest.mark.asyncio
 async def test_extract_structured_tender_accepts_numeric_evidence_values():
@@ -1549,3 +1957,326 @@ async def test_extract_structured_tender_accepts_numeric_evidence_values():
         "15.6",
         "24",
     ]
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "expected"),
+    [
+        ("40 000,00 MAD, valable 120 jours", "40 000 MAD", True),
+        ("40 000 MAD", "40000.00 MAD", True),
+        ("40 000 MAD", "45 000 MAD", False),
+        ("40 000 MAD", "40 000 EUR", False),
+        ("Montant non précisé", "40 000 MAD", False),
+    ],
+)
+def test_provisional_guarantee_comparison(first, second, expected):
+    from app.services.ai_analyzer import _scalar_values_equivalent
+
+    assert (
+        _scalar_values_equivalent("provisional_guarantee", first, second)
+        is expected
+    )
+
+def test_authority_scalar_comparison_uses_authority_equivalence():
+    from app.services.ai_analyzer import _scalar_values_equivalent
+
+    assert _scalar_values_equivalent(
+        "contracting_authority",
+        "Agence Régionale de Modernisation Administrative (ARMA)",
+        "ARMA",
+    ) is True
+
+    assert _scalar_values_equivalent(
+        "contracting_authority",
+        "Commune de Rabat",
+        "Commune de Salé",
+    ) is False
+
+
+def test_technical_scalar_comparison_remains_strict():
+    from app.services.ai_analyzer import _scalar_values_equivalent
+
+    assert not _scalar_values_equivalent("quantity", 10, 20)
+    assert not _scalar_values_equivalent(
+        "processor",
+        "Intel Core i5",
+        "Intel Core i7",
+    )
+
+@pytest.mark.parametrize(
+    ("first", "second", "expected"),
+    [
+        (
+            "Mardi 15 d\u00e9cembre 2026 \u00e0 10h00 (heure du Maroc, GMT+1)",
+            "15 d\u00e9cembre 2026 \u00e0 10h00",
+            True,
+        ),
+        (
+            "15 d\u00e9cembre 2026 \u00e0 10h00",
+            "15 d\u00e9cembre 2026 \u00e0 10 h 00",
+            True,
+        ),
+        (
+            "15 d\u00e9cembre 2026 \u00e0 10h00",
+            "15 d\u00e9cembre 2026 \u00e0 11:00",
+            False,
+        ),
+        (
+            "15 d\u00e9cembre 2026",
+            "15 d\u00e9cembre 2026 \u00e0 10h00",
+            False,
+        ),
+        (
+            "15 d\u00e9cembre 2026 \u00e0 10h00",
+            "16 d\u00e9cembre 2026 \u00e0 10h00",
+            False,
+        ),
+    ],
+)
+
+def test_deadline_scalar_comparison(first, second, expected):
+    from app.services.ai_analyzer import _scalar_values_equivalent
+
+    assert (
+        _scalar_values_equivalent("deadline", first, second)
+        is expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "expected"),
+    [
+        (
+            "Agence Régionale de Modernisation Administrative "
+            "de Fès-Meknès (ARMA-FM)",
+            "ARMA-FM",
+            True,
+        ),
+        (
+            "ARMA-FM",
+            "Agence Régionale de Modernisation Administrative "
+            "de Fès-Meknès (ARMA-FM)",
+            True,
+        ),
+        ("ARMA-FM", "ARMA-FX", False),
+        ("Agence Régionale de Modernisation Administrative", "ARMA-FM", False),
+        ("", "ARMA-FM", False),
+        (None, "ARMA-FM", False),
+    ],
+)
+def test_authority_values_equivalent(first, second, expected):
+    from app.services.ai_analyzer import _authority_values_equivalent
+
+    assert _authority_values_equivalent(first, second) is expected
+
+class TestGeminiClientLifecycle:
+
+    def test_create_client_rejects_missing_api_key(self, monkeypatch):
+        monkeypatch.setattr(settings, "gemini_api_key", "")
+
+        with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
+            _create_client()
+
+    def test_create_client_rejects_missing_model(self, monkeypatch):
+        monkeypatch.setattr(settings, "gemini_api_key", "test-api-key")
+        monkeypatch.setattr(settings, "gemini_model", "")
+
+        with pytest.raises(RuntimeError, match="GEMINI_MODEL"):
+            _create_client()
+
+    def test_create_client_uses_configured_credentials(self, monkeypatch):
+        fake_client = MagicMock()
+
+        monkeypatch.setattr(settings, "gemini_api_key", "test-api-key")
+        monkeypatch.setattr(settings, "gemini_model", "test-model")
+        monkeypatch.setattr(
+            "app.services.ai_analyzer.genai.Client",
+            MagicMock(return_value=fake_client),
+        )
+
+        result = _create_client()
+
+        assert result is fake_client
+
+    @pytest.mark.asyncio
+    async def test_open_client_closes_transport_after_success(self, monkeypatch):
+        fake_client = MagicMock()
+        fake_client.aio.aclose = AsyncMock()
+
+        monkeypatch.setattr(
+            "app.services.ai_analyzer._create_client",
+            lambda: fake_client,
+        )
+
+        async with _open_client() as client:
+            assert client is fake_client
+
+        fake_client.aio.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_open_client_closes_transport_after_exception(self, monkeypatch):
+        fake_client = MagicMock()
+        fake_client.aio.aclose = AsyncMock()
+
+        monkeypatch.setattr(
+            "app.services.ai_analyzer._create_client",
+            lambda: fake_client,
+        )
+
+        with pytest.raises(RuntimeError, match="simulated failure"):
+            async with _open_client():
+                raise RuntimeError("simulated failure")
+
+        fake_client.aio.aclose.assert_awaited_once()
+
+@pytest.mark.parametrize(
+    ("value", "minimum", "expected"),
+    [
+        (10, 1, 10),          # Integer مقبول
+        (0, 0, 0),            # الحد الأدنى مقبول
+        (-1, 0, None),        # أقل من الحد الأدنى
+        (10.0, 1, 10),        # Float صحيح عددياً
+        (10.5, 1, None),      # Float عشري
+        (True, 1, None),      # Boolean مرفوض
+        (False, 0, None),     # Boolean مرفوض حتى لو False
+        ("10", 1, None),      # String مرفوض
+        (None, 1, None),      # None مرفوض
+    ],
+)
+def test_clean_int(value, minimum, expected):
+    assert _clean_int(value, minimum) == expected
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, None),
+        ("", None),
+        ("   ", None),
+        (1234, None),
+        ("Budget: 1.234,56 MAD", (Decimal("1234.56"), "MAD")),
+        ("Budget: 1,234.56 MAD", (Decimal("1234.56"), "MAD")),
+        ("Budget: 1.234 MAD", (Decimal("1234"), "MAD")),
+        ("Budget: 1,234 MAD", (Decimal("1234"), "MAD")),
+        ("Budget: 2500 DH", (Decimal("2500"), "MAD")),
+        ("Budget: 2500 DHS", (Decimal("2500"), "MAD")),
+        ("Budget: 2500 EUR", (Decimal("2500"), "EUR")),
+        ("Budget: 2500 USD", (Decimal("2500"), "USD")),
+        ("Budget: 2500 GBP", (Decimal("2500"), "GBP")),
+        ("Budget: 2500 €", (Decimal("2500"), "EUR")),
+        ("Budget: 2500 £", (Decimal("2500"), "GBP")),
+        ("Budget: 100 MAD and 200 EUR", None),
+        ("Budget: 1.234,567.89 MAD", None),
+        ("No amount here", None),
+    ],
+)
+def test_money_signature(value, expected):
+    assert _money_signature(value) == expected
+
+@pytest.mark.parametrize(
+    ("value", "expected_time"),
+    [
+        (None, None),
+        ("", None),
+        ("   ", None),
+        ("No valid date here", None),
+        ("15 novembre 2026 à 10:30", "10:30"),
+        ("15 novembre 2026 à 9h05", "09:05"),
+        ("15/12/2026", None),
+        ("15 novembre 2026 à 10:30 et 11:00", None),
+        ("15 novembre 2026 à 24:00", None),
+        ("15 novembre 2026 à 10:60", None),
+    ],
+)
+def test_deadline_signature(value, expected_time):
+    result = _deadline_signature(value)
+
+
+    if expected_time is None:
+        assert result is None or result[1] is None
+        if result is not None:
+            assert result[1] is None
+    else:
+        assert result is not None
+        assert result[1] == expected_time
+
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        None,
+        "invalid evidence",
+        {"extracted_value": 250000},
+        123,
+    ],
+)
+def test_normalise_evidence_values_preserves_non_list(evidence):
+    from app.services.ai_analyzer import _normalise_evidence_values
+
+    assert _normalise_evidence_values(evidence) is evidence
+
+@pytest.mark.parametrize("data", [None, "invalid", [], 123])
+def test_normalise_structured_payload_preserves_non_dict(data):
+    assert _normalise_structured_payload(data) is data
+
+def test_normalise_structured_payload_normalises_evidence_without_tender():
+    payload = {
+        "evidence": [
+            {"extracted_value": 250000}
+        ]
+    }
+
+    normalised = _normalise_structured_payload(payload)
+
+    assert normalised == {
+        "evidence": [
+            {"extracted_value": "250000"}
+        ]
+    }
+
+def test_build_page_map_merges_repeated_page_markers():
+    text = (
+        "--- Page 1 ---\nFirst part.\n"
+        "--- Page 1 ---\nSecond part."
+    )
+
+    assert _build_page_map(text) == {
+        1: "First part. Second part."
+    }
+def test_build_page_map_returns_empty_for_blank_text():
+    assert _build_page_map("") == {}
+    assert _build_page_map("   \n  ") == {}
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", ["", "   ", "\n\t"])
+async def test_analyze_tender_rejects_empty_text(text):
+    with pytest.raises(
+        ValueError,
+        match="No text was provided for analysis.",
+    ):
+        await analyze_tender(text)
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text", ["", "   ", "\n\t"])
+async def test_extract_structured_tender_rejects_empty_text(text):
+    with pytest.raises(
+        ValueError,
+        match="No text was provided for structured extraction.",
+    ):
+        await extract_structured_tender(text)
+
+@pytest.mark.asyncio
+async def test_extract_structured_tender_propagates_evidence_failure_without_metadata():
+    from app.services import ai_analyzer
+
+    async def fake_extract_chunk(client, chunk, index, total, status=None):
+        raise ai_analyzer.AIConnectionError("Connection failed")
+
+    with (
+        patch.object(ai_analyzer, "split_document", return_value=["chunk"]),
+        patch.object(ai_analyzer, "_extract_chunk", side_effect=fake_extract_chunk),
+        patch.object(ai_analyzer, "_open_client", return_value=_fake_open_client()),
+    ):
+        with pytest.raises(
+            ai_analyzer.AIConnectionError,
+            match="Connection failed",
+        ):
+            await ai_analyzer.extract_structured_tender("text")

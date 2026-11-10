@@ -19,8 +19,10 @@ from pathlib import Path
 import logging
 
 import fitz  # PyMuPDF
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query,status
 from sqlalchemy.orm import Session
+from app.api.deps import get_current_user
+from app.models.user import User
 
 from app.core.config import settings
 from app.db.session import get_db
@@ -46,7 +48,6 @@ from app.services.ai_analyzer import (
     extract_structured_tender,
 )
 from app.services.deadline_parser import parse_deadline
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
@@ -55,6 +56,8 @@ router = APIRouter(
 )
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_PAGES = 200
+MAX_EXTRACTED_TEXT_CHARS = 300_000
 _DEADLINE_LABELS = (
     "date limite de remise des offres",
     "date limite de réception des offres",
@@ -81,14 +84,28 @@ def _parse_deadline_from_document(text: str):
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
-def _get_or_404(db: Session, tender_id: int) -> Tender:
-    """Return a Tender by id or raise HTTP 404."""
-    tender = db.get(Tender, tender_id)
+def _get_or_404(
+    db: Session,
+    tender_id: int,
+    current_user: User,
+) -> Tender:
+    """Return the user's Tender or raise HTTP 404."""
+
+    tender = (
+        db.query(Tender)
+        .filter(
+            Tender.id == tender_id,
+            Tender.owner_id == current_user.id,
+        )
+        .first()
+    )
+
     if tender is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Tender {tender_id} not found.",
+            detail="Tender not found.",
         )
+
     return tender
 
 
@@ -103,6 +120,7 @@ def _get_or_404(db: Session, tender_id: int) -> Tender:
 def create_tender(
     payload: TenderCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> TenderResponse:
     """
     Manually create a new tender record in the database.
@@ -111,14 +129,21 @@ def create_tender(
     or to seed test data.
     """
     tender = Tender(
+        owner_id=current_user.id,
         title=payload.title,
         description=payload.description,
         estimated_budget=payload.estimated_budget,
         deadline=payload.deadline,
     )
-    db.add(tender)
-    db.commit()
-    db.refresh(tender)
+
+    try:
+        db.add(tender)
+        db.commit()
+        db.refresh(tender)
+    except Exception:
+        db.rollback()
+        raise
+
     return TenderResponse.model_validate(tender)
 
 
@@ -129,23 +154,23 @@ def create_tender(
     summary="List all tenders",
 )
 def list_tenders(
-    skip: int = 0,
-    limit: int = 20,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[TenderResponse]:
-    """
-    Return a paginated list of tender records.
+    """Return only the authenticated user's tenders."""
 
-    Parameters
-    ----------
-    skip  : Number of records to skip (offset). Default 0.
-    limit : Maximum number of records to return. Default 20, max 100.
-    """
-    if limit > 100:
-        limit = 100
-    tenders = db.query(Tender).offset(skip).limit(limit).all()
+    tenders = (
+        db.query(Tender)
+        .filter(Tender.owner_id == current_user.id)
+        .order_by(Tender.id.asc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
     return [TenderResponse.model_validate(t) for t in tenders]
-
 
 @router.get(
     "/{tender_id}",
@@ -156,9 +181,11 @@ def list_tenders(
 def get_tender(
     tender_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> TenderResponse:
-    """Return a single tender by its database id."""
-    tender = _get_or_404(db, tender_id)
+    """Return one tender belonging to the authenticated user."""
+
+    tender = _get_or_404(db, tender_id, current_user)
     return TenderResponse.model_validate(tender)
 
 
@@ -172,22 +199,31 @@ def update_tender(
     tender_id: int,
     payload: TenderCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> TenderResponse:
     """
     Replace the fields of an existing tender record.
 
-    All fields in the request body are applied.  Partial updates (PATCH)
+    All fields in the request body are applied. Partial updates (PATCH)
     are not supported yet.
     """
-    tender = _get_or_404(db, tender_id)
-    tender.title = payload.title
-    tender.description = payload.description
-    tender.estimated_budget = payload.estimated_budget
-    tender.deadline = payload.deadline
-    db.commit()
-    db.refresh(tender)
-    return TenderResponse.model_validate(tender)
+    tender = _get_or_404(db, tender_id, current_user)
 
+    try:
+        tender.title = payload.title
+        tender.description = payload.description
+        tender.estimated_budget = payload.estimated_budget
+        tender.deadline = payload.deadline
+
+
+
+        db.commit()
+        db.refresh(tender)
+    except Exception:
+        db.rollback()
+        raise
+
+    return TenderResponse.model_validate(tender)
 
 @router.delete(
     "/{tender_id}",
@@ -197,11 +233,17 @@ def update_tender(
 def delete_tender(
     tender_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> None:
     """Permanently delete a tender record. This action cannot be undone."""
-    tender = _get_or_404(db, tender_id)
-    db.delete(tender)
-    db.commit()
+    tender = _get_or_404(db, tender_id, current_user)
+
+    try:
+        db.delete(tender)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 
 
@@ -216,6 +258,7 @@ def delete_tender(
 async def analyze_pdf(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> AnalyzeResponse:
     """Analyse a PDF and save its structured data to the database."""
 
@@ -243,6 +286,7 @@ async def analyze_pdf(
         )
 
     # 4. Extract text from PDF pages
+        # 4. Extract text from PDF pages
     try:
         with fitz.open(stream=BytesIO(content), filetype="pdf") as pdf:
             if pdf.is_encrypted:
@@ -251,13 +295,41 @@ async def analyze_pdf(
                     detail="Password-protected PDFs are not supported yet.",
                 )
 
-            pages = [
-                {
-                    "page": number,
-                    "text": page.get_text("text").strip(),
-                }
-                for number, page in enumerate(pdf, start=1)
-            ]
+            if pdf.page_count > MAX_PAGES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"The PDF must not exceed {MAX_PAGES} pages.",
+                )
+
+            pages = []
+            total_text_chars = 0
+            pages_with_text = 0
+
+            for page_number in range(pdf.page_count):
+                page_text = (
+                    pdf.load_page(page_number)
+                    .get_text("text")
+                    .strip()
+                )
+
+                total_text_chars += len(page_text)
+
+                if total_text_chars > MAX_EXTRACTED_TEXT_CHARS:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=(
+                            "The extracted PDF text must not exceed "
+                            f"{MAX_EXTRACTED_TEXT_CHARS:,} characters."
+                        ),
+                    )
+
+                if page_text:
+                    pages_with_text += 1
+
+                pages.append({
+                    "page": page_number + 1,
+                    "text": page_text,
+                })
 
     except HTTPException:
         raise
@@ -266,9 +338,6 @@ async def analyze_pdf(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Could not read this PDF. It may be corrupted.",
         ) from exc
-
-    pages_with_text = sum(1 for page in pages if page["text"])
-
     # 5. Scanned PDF detection
     if pages_with_text == 0:
         return AnalyzeResponse(
@@ -319,9 +388,10 @@ async def analyze_pdf(
         ) from exc
 
     except (ValueError, RuntimeError) as exc:
+        logger.error("Tender report generation failed (%s).", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
+            detail="Could not generate the tender analysis report.",
         ) from exc
 
     try:
@@ -331,7 +401,7 @@ async def analyze_pdf(
     except (AIConnectionError, AITimeoutError, AIStatusError, ValueError, RuntimeError) as exc:
         # Structured extraction failed but the report is valid: degrade rather
         # than failing the whole request.
-        logger.warning("Structured extraction failed: %s", exc)
+        logger.warning("Structured extraction failed (%s).", type(exc).__name__)
         metadata.structured_failed = True
         structured = StructuredTenderAnalysis()
 
@@ -348,6 +418,7 @@ async def analyze_pdf(
     )[:200]
 
     tender = Tender(
+        owner_id=current_user.id,
         title=title,
         description=report,
         estimated_budget=structured.tender.estimated_budget,
@@ -404,8 +475,9 @@ async def analyze_pdf(
                 )
             )
 
-        db.commit()
+
         db.refresh(tender)
+        db.commit()
 
     except Exception as exc:
         db.rollback()

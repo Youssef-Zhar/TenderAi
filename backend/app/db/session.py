@@ -1,18 +1,16 @@
-import os
-
-from dotenv import load_dotenv
 from sqlalchemy import URL, create_engine
 from sqlalchemy.orm import sessionmaker
 
-load_dotenv()
+from app.core.config import settings
+
 
 database_url = URL.create(
     drivername="mysql+pymysql",
-    username=os.getenv("DB_USER", "root"),
-    password=os.getenv("DB_PASSWORD", ""),
-    host=os.getenv("DB_HOST", "127.0.0.1"),
-    port=int(os.getenv("DB_PORT", "3306")),
-    database=os.getenv("DB_NAME", "tenderai_db"),
+    username=settings.db_user,
+    password=settings.db_password,
+    host=settings.db_host,
+    port=settings.db_port,
+    database=settings.db_name,
     query={"charset": "utf8mb4"},
 )
 

@@ -22,3 +22,11 @@ __pycache__/
 
 # Backup files
 *.bak
+# Local database backups
+/backups/
+
+# SonarQube local analysis
+**/.scannerwork/
+
+# Environment backup files containing possible secrets
+**/.env.backup-*

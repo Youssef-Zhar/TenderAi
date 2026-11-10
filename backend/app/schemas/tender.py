@@ -4,10 +4,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class TenderInput(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     title: str = Field(min_length=5, max_length=200)
     description: str = Field(min_length=20)
     estimated_budget: float | None = Field(default=None, ge=0)
     deadline: date | None = None
+
 
 
 class TenderCreate(TenderInput):
