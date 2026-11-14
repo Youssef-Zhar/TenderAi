@@ -3,20 +3,16 @@ Centralized application settings using pydantic-settings.
 """
 
 from pathlib import Path
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
+from urllib.parse import urlsplit
 
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
-
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
-
     # Database
     db_host: str = "127.0.0.1"
     db_port: int = 3306
@@ -25,23 +21,17 @@ class Settings(BaseSettings):
     db_password: str = ""
     db_migration_user: str = ""
     db_migration_password: str = ""
-
-    # Google Gemini
-    gemini_api_key: str = ""
-    gemini_model: str = "gemini-3.5-flash-lite"
-
+    # OpenRouter
+    openrouter_api_key: str = ""
+    openrouter_model: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
     # Authentication / JWT
     secret_key: str = ""
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
-
-
 settings = Settings()
-
-
 def validate_settings() -> None:
     """Validate critical application settings before startup."""
-
     # Database
     required_db_values = {
         "DB_HOST": settings.db_host,
@@ -49,14 +39,30 @@ def validate_settings() -> None:
         "DB_USER": settings.db_user,
         "DB_PASSWORD": settings.db_password,
     }
-
     for name, value in required_db_values.items():
         if not value or not value.strip():
             raise RuntimeError(f"{name} must be configured.")
-
     if not 1 <= settings.db_port <= 65535:
         raise RuntimeError("DB_PORT must be between 1 and 65535.")
 
+    if settings.openrouter_api_key and not settings.openrouter_api_key.strip():
+        raise RuntimeError("OPENROUTER_API_KEY cannot contain only whitespace.")
+
+    if settings.openrouter_api_key.strip():
+        if not settings.openrouter_model.strip():
+            raise RuntimeError(
+                "OPENROUTER_MODEL must be configured when OPENROUTER_API_KEY is set."
+            )
+    base_url = urlsplit(settings.openrouter_base_url.strip())
+    if (
+        base_url.scheme != "https"
+        or not base_url.hostname
+        or base_url.username
+        or base_url.password
+    ):
+        raise RuntimeError(
+            "OPENROUTER_BASE_URL must be a valid HTTPS URL."
+        )
     # JWT
     secret = settings.secret_key
 
@@ -82,10 +88,4 @@ def validate_settings() -> None:
     if not 1 <= settings.access_token_expire_minutes <= 60:
         raise RuntimeError(
             "ACCESS_TOKEN_EXPIRE_MINUTES must be between 1 and 60."
-        )
-
-    # Gemini is optional, but its model must be configured when a key exists.
-    if settings.gemini_api_key and not settings.gemini_model.strip():
-        raise RuntimeError(
-            "GEMINI_MODEL must be configured when GEMINI_API_KEY is set."
         )

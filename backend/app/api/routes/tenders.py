@@ -308,7 +308,7 @@ async def analyze_pdf(
             for page_number in range(pdf.page_count):
                 page_text = (
                     pdf.load_page(page_number)
-                    .get_text("text")
+                    .get_text("text") # type: ignore[attr-defined]
                     .strip()
                 )
 
@@ -346,7 +346,7 @@ async def analyze_pdf(
             pages_with_text=0,
             analysis=AnalysisResult(
                 status="ocr_required",
-                model=settings.gemini_model,
+                model=settings.openrouter_model,
                 report=(
                     "No selectable text was found. "
                     "OCR processing is required but not yet supported."
@@ -372,19 +372,19 @@ async def analyze_pdf(
     except AIConnectionError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Cannot connect to the Gemini API. Check your internet connection.",
+            detail="Cannot connect to the AI provider. Check your internet connection.",
         ) from exc
 
     except AITimeoutError as exc:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Gemini took too long to respond.",
+            detail="The AI provider took too long to respond.",
         ) from exc
 
     except AIStatusError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Gemini returned HTTP {exc.status_code}.",
+            detail=f"AI provider returned HTTP {exc.status_code}.",
         ) from exc
 
     except (ValueError, RuntimeError) as exc:
@@ -494,7 +494,7 @@ async def analyze_pdf(
         tender_id=tender.id,
         analysis=AnalysisResult(
             status=analysis_status_value,
-            model=settings.gemini_model,
+            model=settings.openrouter_model,
             report=report,
             structured_data=structured,
             metadata=metadata,

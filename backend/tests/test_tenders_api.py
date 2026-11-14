@@ -4,7 +4,7 @@ tests/test_tenders_api.py
 Tests d'intégration pour POST /api/v1/tenders/analyze-pdf.
 
 - Base de données : SQLite en mémoire (isolée, jamais MariaDB)
-- IA mockée : pas d'appel réel à Gemini
+- AI is mocked; no real provider call is made
 - Vérifie : statut HTTP, données renvoyées, enregistrements en DB
 """
 
@@ -139,11 +139,11 @@ def make_encrypted_pdf() -> bytes:
     buffer = io.BytesIO()
 
     with pymupdf.open() as pdf:
-        page = pdf.new_page()
+        page = pdf.new_page()    # type: ignore[attr-defined]
         page.insert_text((72, 72), "Confidential procurement document")
         pdf.save(
             buffer,
-            encryption=pymupdf.PDF_ENCRYPT_AES_256,
+            encryption=getattr(pymupdf, "PDF_ENCRYPT_AES_256"),
             owner_pw="owner-password",
             user_pw="user-password",
         )
@@ -156,7 +156,7 @@ def make_pdf_pages(page_count: int) -> bytes:
 
     with pymupdf.open() as pdf:
         for _ in range(page_count):
-            pdf.new_page()
+            pdf.new_page()   # type: ignore[attr-defined]
 
         pdf.save(buffer)
 
@@ -168,7 +168,7 @@ def make_pdf_with_large_text() -> bytes:
 
     with pymupdf.open() as pdf:
         for _ in range(101):
-            page = pdf.new_page()
+            page = pdf.new_page()  # type: ignore[attr-defined]
             page.insert_textbox(
                 pymupdf.Rect(20, 20, 590, 770),
                 "Tender data " * 250,
@@ -654,7 +654,7 @@ def test_analyze_pdf_preserves_report_when_structured_fails(client , auth_header
 
 def test_analyze_pdf_hides_internal_report_generation_error(client, auth_headers):
     """Les erreurs internes ne doivent pas être exposées au client."""
-    internal_error = "GEMINI_API_KEY is not configured."
+    internal_error = "OPENROUTER_API_KEY is not configured."
 
     with patch(
         "app.api.routes.tenders.analyze_tender",
@@ -1198,7 +1198,7 @@ def test_upload_returns_503_when_ai_connection_fails(
     from app.services.ai_analyzer import AIConnectionError
 
     async def fail_analysis(*args, **kwargs):
-        raise AIConnectionError("Gemini unavailable")
+        raise AIConnectionError("OpenRouter unavailable")
 
     monkeypatch.setattr(
         "app.api.routes.tenders.analyze_tender",
@@ -1222,7 +1222,7 @@ def test_upload_returns_504_when_ai_times_out(
     from app.services.ai_analyzer import AITimeoutError
 
     async def fail_analysis(*args, **kwargs):
-        raise AITimeoutError("Gemini timeout")
+        raise AITimeoutError("OpenRouter timeout")
 
     monkeypatch.setattr(
         "app.api.routes.tenders.analyze_tender",
@@ -1246,7 +1246,7 @@ def test_upload_returns_502_when_ai_returns_error_status(
     from app.services.ai_analyzer import AIStatusError
 
     async def fail_analysis(*args, **kwargs):
-        raise AIStatusError(503, "Gemini service unavailable")
+        raise AIStatusError(503, "OpenRouter service unavailable")
 
     monkeypatch.setattr(
         "app.api.routes.tenders.analyze_tender",

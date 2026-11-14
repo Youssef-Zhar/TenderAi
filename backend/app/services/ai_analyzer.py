@@ -1,8 +1,8 @@
+
 """
 app/services/ai_analyzer.py
 ----------------------------
-Calls the Google Gemini API (via the official ``google-genai`` SDK) to analyse
-a tender document.
+Calls the OpenRouter API (via HTTPX) to analyse tender documents.
 
 Two-pass strategy:
   Pass 1 — extract structured facts from every chunk (compact format).
@@ -10,14 +10,14 @@ Two-pass strategy:
 
 Truncation policy:
   - Pass 1 chunks: on finish_reason='length', retry once with a minimal
-    fallback prompt.  If the retry also truncates, accept the partial
+    fallback prompt. If the retry also truncates, accept the partial
     evidence with a [PARTIAL] marker so the analysis can still proceed.
   - Pass 2 final report: on finish_reason='length' the outcome depends on the
-    caller.  With a supplied ``metadata`` the truncated report is returned
+    caller. With a supplied ``metadata`` the truncated report is returned
     and flagged as a degradation; without ``metadata`` a RuntimeError is
     raised so a truncated report is never returned as an unqualified success.
   - Structured JSON: on finish_reason='length' or invalid JSON the outcome
-    depends on the caller.  With a supplied ``metadata`` the data validated so
+    depends on the caller. With a supplied ``metadata`` the data validated so
     far is returned and flagged; without ``metadata`` a RuntimeError is
     raised. Unvalidated payloads are never merged.
 """
@@ -35,9 +35,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from google import genai
-from google.genai import errors as genai_errors
-from google.genai import types as genai_types
+
 
 from app.schemas.analysis import (
     StructuredTenderAnalysis,
@@ -89,8 +87,8 @@ FINAL_OUTPUT_TOKENS = 4_000
 # Structured JSON extraction token budget.
 STRUCTURED_OUTPUT_TOKENS = 8_000
 
-# Gemini request timeout: 180 s per request.
-_TIMEOUT_MS = 180_000
+# OpenRouter request timeout: 180 s per request.
+_TIMEOUT_SECONDS = 180.0
 
 
 class AIAnalysisError(RuntimeError):
@@ -98,15 +96,15 @@ class AIAnalysisError(RuntimeError):
 
 
 class AIConnectionError(AIAnalysisError):
-    """The Gemini API could not be reached."""
+    """The OpenRouter API could not be reached."""
 
 
 class AITimeoutError(AIAnalysisError):
-    """A Gemini API request timed out."""
+    """An OpenRouter API request timed out."""
 
 
 class AIStatusError(AIAnalysisError):
-    """The Gemini API returned an error status."""
+    """The OpenRouter API returned an error status."""
 
     def __init__(self, status_code: int | None, message: str) -> None:
         self.status_code = status_code
@@ -114,7 +112,7 @@ class AIStatusError(AIAnalysisError):
 
 
 class AIFinishReasonError(AIAnalysisError):
-    """Gemini stopped generation for an unexpected or blocked reason."""
+    """OpenRouter stopped generation for an unexpected or blocked reason."""
 
 
 @dataclass
@@ -214,111 +212,140 @@ def split_document(text: str) -> list[str]:
     return chunks
 
 
-# ── Low-level Gemini call ─────────────────────────────────────────────────────
 
-def _create_client() -> genai.Client:
-    """
-    Build a Gemini API client from the configured credentials.
+# ── Low-level OpenRouter call ──
 
-    Raises:
-        RuntimeError — GEMINI_API_KEY or GEMINI_MODEL is not configured.
-    """
-    if not settings.gemini_api_key:
-        raise RuntimeError("GEMINI_API_KEY is not configured.")
+def _create_client() -> httpx.AsyncClient:
+    """Create an authenticated OpenRouter HTTP client."""
+    if not settings.openrouter_api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is not configured.")
 
-    if not settings.gemini_model:
-        raise RuntimeError("GEMINI_MODEL is not configured.")
+    if not settings.openrouter_model:
+        raise RuntimeError("OPENROUTER_MODEL is not configured.")
 
-    return genai.Client(
-        api_key=settings.gemini_api_key,
-        http_options=genai_types.HttpOptions(timeout=_TIMEOUT_MS),
+    if not settings.openrouter_base_url:
+        raise RuntimeError("OPENROUTER_BASE_URL is not configured.")
+
+    return httpx.AsyncClient(
+        base_url=settings.openrouter_base_url.rstrip("/") + "/",
+        headers={
+            "Authorization": f"Bearer {settings.openrouter_api_key}",
+            "Content-Type": "application/json",
+        },
+        timeout=httpx.Timeout(_TIMEOUT_SECONDS),
     )
 
 
 @asynccontextmanager
 async def _open_client():
-    """Yield a Gemini client and close its async transport on exit."""
     client = _create_client()
     try:
         yield client
     finally:
-        await client.aio.aclose()
+        await client.aclose()
 
 
-def _parse_gemini_response(
-    response: object, max_tokens: int
+def _parse_openrouter_response(
+    response: httpx.Response,
+    max_tokens: int,
 ) -> tuple[str, str]:
-    """
-    Extract (content, finish_reason) from a Gemini response.
+    """Parse an OpenRouter Chat Completions response."""
 
-    Only STOP is considered a successful completion.
-    MAX_TOKENS is returned as "length" for truncation handling.
-    All other finish reasons are treated as provider failures.
-    """
-    candidates = getattr(response, "candidates", None)
-    if not candidates:
-        raise RuntimeError(
-            "Unexpected Gemini response format (no candidates)."
+    try:
+        payload = response.json()
+    except (ValueError, TypeError) as exc:
+        raise AIAnalysisError(
+            "OpenRouter returned an invalid JSON response."
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise AIAnalysisError(
+            "OpenRouter returned an unexpected response format."
         )
 
-    candidate = candidates[0]
-    finish = getattr(candidate, "finish_reason", None)
-    finish_name = getattr(finish, "name", None)
+    choices = payload.get("choices")
 
-    if finish_name == "MAX_TOKENS":
-        finish_reason = "length"
-    elif finish_name == "STOP":
-        finish_reason = "stop"
-    else:
+    if not isinstance(choices, list) or not choices:
+        raise AIAnalysisError(
+            "OpenRouter response contains no completion choices."
+        )
+
+    choice = choices[0]
+
+    if not isinstance(choice, dict):
+        raise AIAnalysisError(
+            "OpenRouter returned an invalid completion choice."
+        )
+
+    finish_reason = choice.get("finish_reason")
+
+    if finish_reason not in {"stop", "length"}:
         raise AIFinishReasonError(
-            f"Gemini stopped generation with finish reason: "
-            f"{finish_name or 'UNKNOWN'}."
+            f"OpenRouter returned unexpected finish reason: "
+            f"{finish_reason!r}"
         )
 
-    content = ""
-    content_obj = getattr(candidate, "content", None)
+    message = choice.get("message")
 
-    for part in getattr(content_obj, "parts", None) or []:
-        text = getattr(part, "text", None)
-        if text:
-            content += text
+    if not isinstance(message, dict):
+        raise AIAnalysisError(
+            "OpenRouter response contains no valid message."
+        )
 
-    content = content.strip()
+    content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        reasoning = message.get("reasoning")
+        logger.error(
+            "OpenRouter returned empty content. "
+            "finish_reason=%s, message_keys=%s, "
+            "content_type=%s, reasoning_chars=%s",
+            finish_reason,
+            sorted(message.keys()),
+            type(content).__name__,
+            len(reasoning) if isinstance(reasoning, str) else 0,
+        )
+        raise AIAnalysisError(
+            "OpenRouter returned empty or invalid content."
+        )
+    usage = payload.get("usage")
+    if isinstance(usage, dict):
+        logger.info(
+            "OpenRouter usage: prompt=%s, completion=%s, total=%s, "
+            "max_tokens=%d, finish_reason=%s",
+            usage.get("prompt_tokens", "unknown"),
+            usage.get("completion_tokens", "unknown"),
+            usage.get("total_tokens", "unknown"),
+            max_tokens,
+            finish_reason,
+        )
 
-    usage = getattr(response, "usage_metadata", None)
-    prompt_tokens = getattr(usage, "prompt_token_count", None)
-    candidates_tokens = getattr(usage, "candidates_token_count", None)
-    total_tokens = getattr(usage, "total_token_count", None)
-
-    logger.debug(
-        "Gemini call complete: finish_reason=%r, max_tokens=%d, "
-        "prompt_tokens=%s, candidates_tokens=%s, total_tokens=%s",
-        finish_reason,
-        max_tokens,
-        prompt_tokens,
-        candidates_tokens,
-        total_tokens,
-    )
-
-    if not content:
-        raise RuntimeError("Gemini returned an empty response.")
+    if finish_reason == "length":
+        logger.warning(
+            "OpenRouter response reached the output token limit (%d).",
+            max_tokens,
+        )
 
     return content, finish_reason
 
+
 def _get_retry_delay(
-    exc: genai_errors.APIError,
+    exc: Exception,
     attempt: int,
     max_delay: float = 30.0,
 ) -> float | None:
-    """Return a safe retry delay, preferring the provider's Retry-After."""
-    fallback_delay = 0.5 * (2 ** (attempt - 1))
+    """Return Retry-After delay or exponential fallback."""
 
+    fallback_delay = min(0.5 * (2 ** (attempt - 1)), max_delay)
     response = getattr(exc, "response", None)
-    headers = getattr(response, "headers", None)
-    retry_after = headers.get("Retry-After") if headers else None
+
+    if response is None:
+        return fallback_delay
+
+    headers = getattr(response, "headers", {})
+    retry_after = headers.get("Retry-After")
 
     if retry_after is None:
-        return min(fallback_delay, max_delay)
+        return fallback_delay
 
     try:
         delay = float(retry_after)
@@ -332,8 +359,9 @@ def _get_retry_delay(
             delay = (
                 retry_date - datetime.now(timezone.utc)
             ).total_seconds()
+
         except (TypeError, ValueError, OverflowError):
-            return min(fallback_delay, max_delay)
+            return fallback_delay
 
     if delay < 0:
         delay = 0
@@ -343,46 +371,58 @@ def _get_retry_delay(
 
     return delay
 
-async def _call_gemini(
-    client: genai.Client,
+
+async def _call_openrouter(
+    client: httpx.AsyncClient,
     system_prompt: str,
     user_message: str,
     max_tokens: int,
 ) -> tuple[str, str]:
     """
-    Send one Gemini generate_content request with retries.
+    Send one OpenRouter Chat Completions request with retries.
     """
+
     RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
     MAX_ATTEMPTS = 3
 
-    config = genai_types.GenerateContentConfig(
-        system_instruction=system_prompt,
-        max_output_tokens=max_tokens,
-    )
+    payload = {
+        "model": settings.openrouter_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+        "max_tokens": max_tokens,
+        "reasoning": {
+            "effort": "none",
+        },
+        "stream": False,
+    }
 
-    response: object | None = None
-    last_exc: Exception | None = None
+    response: httpx.Response | None = None
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            response = await client.aio.models.generate_content(
-                model=settings.gemini_model,
-                contents=user_message,
-                config=config,
+            response = await client.post(
+                "chat/completions",
+                json=payload,
             )
+
+            response.raise_for_status()
             break
 
-        except genai_errors.APIError as exc:
-            last_exc = exc
-            status_code = getattr(exc, "code", None)
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
 
-            if status_code in RETRYABLE_STATUSES and attempt < MAX_ATTEMPTS:
+            if (
+                status_code in RETRYABLE_STATUSES
+                and attempt < MAX_ATTEMPTS
+            ):
                 delay = _get_retry_delay(exc, attempt)
 
                 if delay is not None:
                     logger.warning(
-                        "Gemini returned %s (attempt %d/%d). "
-                        "Retrying in %.1fs.",
+                        "OpenRouter returned HTTP %s "
+                        "(attempt %d/%d). Retrying in %.1fs.",
                         status_code,
                         attempt,
                         MAX_ATTEMPTS,
@@ -392,24 +432,24 @@ async def _call_gemini(
                     continue
 
                 logger.warning(
-                    "Gemini returned %s with Retry-After exceeding %.1fs. "
-                    "Skipping retry.",
+                    "OpenRouter returned HTTP %s with Retry-After "
+                    "exceeding %.1fs. Skipping retry.",
                     status_code,
                     30.0,
                 )
 
             raise AIStatusError(
                 status_code,
-                f"Gemini returned HTTP {status_code}.",
+                f"OpenRouter returned HTTP {status_code}.",
             ) from exc
 
         except (httpx.TimeoutException, TimeoutError) as exc:
-            last_exc = exc
-
             if attempt < MAX_ATTEMPTS:
                 delay = 0.5 * (2 ** (attempt - 1))
+
                 logger.warning(
-                    "Gemini timeout (attempt %d/%d). Retrying in %.1fs.",
+                    "OpenRouter timeout (attempt %d/%d). "
+                    "Retrying in %.1fs.",
                     attempt,
                     MAX_ATTEMPTS,
                     delay,
@@ -418,16 +458,15 @@ async def _call_gemini(
                 continue
 
             raise AITimeoutError(
-                "Gemini took too long to respond."
+                "OpenRouter took too long to respond."
             ) from exc
 
-        except (httpx.ConnectError, httpx.TransportError, OSError) as exc:
-            last_exc = exc
-
+        except (httpx.TransportError, OSError) as exc:
             if attempt < MAX_ATTEMPTS:
                 delay = 0.5 * (2 ** (attempt - 1))
+
                 logger.warning(
-                    "Gemini network error (attempt %d/%d): %s. "
+                    "OpenRouter network error (attempt %d/%d): %s. "
                     "Retrying in %.1fs.",
                     attempt,
                     MAX_ATTEMPTS,
@@ -438,15 +477,20 @@ async def _call_gemini(
                 continue
 
             raise AIConnectionError(
-                "Cannot connect to the Gemini API. "
+                "Cannot connect to the OpenRouter API. "
                 "Check your internet connection."
             ) from exc
 
-    else:
-        if last_exc is not None:
-            raise last_exc
+    if response is None:
+        raise AIAnalysisError(
+            "OpenRouter request failed without a response."
+        )
 
-    return _parse_gemini_response(response, max_tokens)
+    return _parse_openrouter_response(response, max_tokens)
+
+
+# ── Extraction helpers ──
+
 
 # ── Extraction helpers ────────────────────────────────────────────────────────
 
@@ -498,7 +542,7 @@ def _build_fallback_prompt(chunk: str, index: int, total: int) -> str:
 
 
 async def _extract_chunk(
-    client: genai.Client,
+    client: httpx.AsyncClient,
     chunk: str,
     index: int,
     total: int,
@@ -524,7 +568,7 @@ async def _extract_chunk(
         index, total, len(chunk), CHUNK_OUTPUT_TOKENS,
     )
     primary_prompt = _build_extraction_prompt(chunk, index, total)
-    content, finish_reason = await _call_gemini(
+    content, finish_reason = await _call_openrouter(
         client, _SYSTEM_EXTRACTION, primary_prompt, CHUNK_OUTPUT_TOKENS
     )
 
@@ -542,9 +586,24 @@ async def _extract_chunk(
     )
 
     fallback_prompt = _build_fallback_prompt(chunk, index, total)
-    fallback_content, fallback_finish = await _call_gemini(
-        client, _SYSTEM_FALLBACK, fallback_prompt, CHUNK_OUTPUT_TOKENS
-    )
+    try:
+        fallback_content, fallback_finish = await _call_openrouter(
+            client, _SYSTEM_FALLBACK, fallback_prompt, CHUNK_OUTPUT_TOKENS
+        )
+    except AIAnalysisError as exc:
+        if isinstance(exc, (AIConnectionError, AITimeoutError, AIStatusError)):
+            raise
+        if status is not None:
+            status.truncated = True
+        logger.warning(
+            "Section %d/%d: fallback extraction failed (%s). "
+            "Keeping partial primary extraction.",
+            index, total, type(exc).__name__,
+        )
+        return (
+            f"[PARTIAL — fallback extraction failed]\n"
+            f"{content}"
+        )
 
     if fallback_finish != "length":
         return f"[FALLBACK — primary extraction was truncated]\n{fallback_content}"
@@ -1020,7 +1079,7 @@ async def analyze_tender(
 
     Raises:
         ValueError               — text is empty.
-        AIConnectionError        — Gemini API is unreachable.
+        AIConnectionError        — OpenRouter API is unreachable.
         AITimeoutError           — a request timed out.
         AIStatusError            — API returned a 4xx/5xx.
         RuntimeError             — final report was truncated (only when
@@ -1089,7 +1148,7 @@ async def analyze_tender(
             "Write the report now."
         )
 
-        final_content, final_finish = await _call_gemini(
+        final_content, final_finish = await _call_openrouter(
             client, _SYSTEM_SYNTHESIS, user_2, FINAL_OUTPUT_TOKENS
         )
 
@@ -1249,7 +1308,7 @@ async def extract_structured_tender(
             <raw_text>{chunk}</raw_text>"""
 
             try:
-                content, finish_reason = await _call_gemini(
+                content, finish_reason = await _call_openrouter(
                     client,
                     (
                         "Extract procurement facts into strict JSON. "

@@ -3,7 +3,7 @@ app/services/deadline_parser.py
 --------------------------------
 Parse human-written procurement deadlines into ``datetime.date`` objects.
 
-Gemini returns the submission deadline verbatim (usually in French, e.g.
+The AI model returns the submission deadline verbatim (usually in French, e.g.
 ``"15 novembre 2026 à 12 h 00"``). This module normalises the common written
 forms and returns the calendar date, or ``None`` when the text is missing or
 unrecognised. The time of day is intentionally discarded because the database
