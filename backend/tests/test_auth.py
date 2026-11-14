@@ -11,6 +11,8 @@ from app.core.security import create_access_token, hash_password
 from app.db.base import Base
 from app.db.session import get_db
 from app.models.user import User
+from typing import cast
+from sqlalchemy import Table, create_engine, select
 
 from datetime import datetime, timedelta, timezone
 
@@ -35,11 +37,12 @@ def auth_env():
         autoflush=False,
         expire_on_commit=False,
     )
+    user_table = cast(Table, User.__table__)
 
     # Create ONLY the users table in isolated SQLite.
     Base.metadata.create_all(
         bind=engine,
-        tables=[User.__table__],
+        tables=[user_table],
     )
 
     db = TestingSessionLocal()
@@ -62,7 +65,7 @@ def auth_env():
         db.close()
         Base.metadata.drop_all(
             bind=engine,
-            tables=[User.__table__],
+            tables=[user_table],
         )
         engine.dispose()
 

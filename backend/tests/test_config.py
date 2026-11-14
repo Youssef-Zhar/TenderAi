@@ -14,8 +14,9 @@ def set_valid_settings(monkeypatch):
         "secret_key": "A" * 64,
         "jwt_algorithm": "HS256",
         "access_token_expire_minutes": 30,
-        "gemini_api_key": "",
-        "gemini_model": "gemini-3.5-flash-lite",
+        "openrouter_api_key": "",
+        "openrouter_model": "",
+        "openrouter_base_url": "https://openrouter.ai/api/v1",
     }
 
     for name, value in valid_values.items():
@@ -96,24 +97,27 @@ def test_validate_settings_accepts_expiration_boundaries(monkeypatch):
         )
         config.validate_settings()
 
-
-def test_validate_settings_rejects_empty_gemini_model_when_key_exists(monkeypatch):
+def test_validate_settings_rejects_empty_openrouter_model_when_key_exists(
+    monkeypatch,
+):
     set_valid_settings(monkeypatch)
-    monkeypatch.setattr(config.settings, "gemini_api_key", "test-api-key")
-    monkeypatch.setattr(config.settings, "gemini_model", "   ")
+    monkeypatch.setattr(
+        config.settings, "openrouter_api_key", "test-api-key"
+    )
+    monkeypatch.setattr(config.settings, "openrouter_model", "   ")
 
-    with pytest.raises(RuntimeError, match="GEMINI_MODEL"):
+    with pytest.raises(RuntimeError, match="OPENROUTER_MODEL"):
         config.validate_settings()
 
 
-def test_validate_settings_allows_optional_gemini_configuration(monkeypatch):
+def test_validate_settings_allows_optional_openrouter_configuration(
+    monkeypatch,
+):
     set_valid_settings(monkeypatch)
-    monkeypatch.setattr(config.settings, "gemini_api_key", "")
-    monkeypatch.setattr(config.settings, "gemini_model", "")
+    monkeypatch.setattr(config.settings, "openrouter_api_key", "")
+    monkeypatch.setattr(config.settings, "openrouter_model", "")
 
     config.validate_settings()
-
-
 
 def test_validate_settings_rejects_placeholder_secret_with_spaces(monkeypatch):
     set_valid_settings(monkeypatch)
@@ -124,4 +128,38 @@ def test_validate_settings_rejects_placeholder_secret_with_spaces(monkeypatch):
     )
 
     with pytest.raises(RuntimeError, match="insecure placeholder"):
+        config.validate_settings()
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://openrouter.ai/api/v1",
+        "not-a-url",
+        "https://user:password@openrouter.ai/api/v1",
+    ],
+)
+def test_validate_settings_rejects_unsafe_openrouter_base_url(
+    monkeypatch, base_url
+):
+    set_valid_settings(monkeypatch)
+    monkeypatch.setattr(
+        config.settings, "openrouter_api_key", "test-api-key"
+    )
+    monkeypatch.setattr(
+        config.settings, "openrouter_model", "test/model"
+    )
+    monkeypatch.setattr(
+        config.settings, "openrouter_base_url", base_url
+    )
+
+    with pytest.raises(RuntimeError, match="valid HTTPS URL"):
+        config.validate_settings()
+
+
+def test_validate_settings_rejects_whitespace_openrouter_key(monkeypatch):
+    set_valid_settings(monkeypatch)
+    monkeypatch.setattr(
+        config.settings, "openrouter_api_key", "   "
+    )
+
+    with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):
         config.validate_settings()

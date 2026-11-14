@@ -3,7 +3,7 @@ tests/test_ai_analyzer.py
 --------------------------
 Unit tests for app/services/ai_analyzer.py.
 
-All tests mock the Gemini client — no network calls are made.
+All tests mock the OpenRouter client — no network calls are made.
 Run with: .venv/Scripts/pytest.exe tests/ -v
 """
 
@@ -13,8 +13,6 @@ from pydantic import ValidationError
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
-from google.genai import errors as genai_errors
-from google.genai import types as genai_types
 
 from contextlib import asynccontextmanager
 from decimal import Decimal
@@ -27,7 +25,7 @@ from app.schemas.tender import TenderInput
 from app.services.ai_analyzer import (
     analyze_tender,
     split_document,
-    _call_gemini,
+    _call_openrouter,
     _extract_chunk,
     AIConnectionError,
     AITimeoutError,
@@ -46,47 +44,63 @@ from app.services.ai_analyzer import (
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _make_gemini_response(
+
+def _make_openrouter_response(
     content: str,
-    finish_reason=genai_types.FinishReason.STOP,
-) -> MagicMock:
-    """Build a mock Gemini GenerateContentResponse carrying ``content``."""
-    part = MagicMock()
-    part.text = content
+    finish_reason: str | None = "stop",
+) -> httpx.Response:
+    """Build a realistic OpenRouter Chat Completions HTTP response."""
+    return httpx.Response(
+        200,
+        json={
+            "choices": [
+                {
+                    "finish_reason": finish_reason,
+                    "message": {
+                        "role": "assistant",
+                        "content": content,
+                    },
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 20,
+                "total_tokens": 30,
+            },
+        },
+        request=httpx.Request(
+            "POST",
+            "https://openrouter.ai/api/v1/chat/completions",
+        ),
+    )
 
-    candidate = MagicMock()
-    candidate.content.parts = [part]
-    candidate.finish_reason = finish_reason
 
-    response = MagicMock()
-    response.candidates = [candidate]
-    response.usage_metadata = None
-    return response
-
-
-def _make_gemini_client(responses) -> MagicMock:
-    """Build a mock genai.Client whose generate_content yields ``responses``."""
+def _make_openrouter_client(responses) -> MagicMock:
+    """Build a mock HTTPX client returning HTTP responses."""
     client = MagicMock()
-    client.aio.aclose = AsyncMock()
+    client.aclose = AsyncMock()
+
     if isinstance(responses, list):
-        client.aio.models.generate_content = AsyncMock(side_effect=responses)
+        client.post = AsyncMock(side_effect=responses)
     else:
-        client.aio.models.generate_content = AsyncMock(return_value=responses)
+        client.post = AsyncMock(return_value=responses)
+
     return client
 
 
-def _make_gemini_error_client(exc: Exception) -> MagicMock:
-    """Build a mock genai.Client that always raises ``exc``."""
+def _make_openrouter_error_client(exc: Exception) -> MagicMock:
+    """Build a mock HTTPX client that always raises an exception."""
     client = MagicMock()
-    client.aio.aclose = AsyncMock()
-    client.aio.models.generate_content = AsyncMock(side_effect=exc)
+    client.aclose = AsyncMock()
+    client.post = AsyncMock(side_effect=exc)
     return client
 
 
 def _fake_open_client() -> MagicMock:
-    """Async context manager yielding a mock genai.Client."""
+    """Async context manager yielding a mock HTTPX client."""
     client = MagicMock()
-    client.aio.aclose = AsyncMock()
+    client.aclose = AsyncMock()
+    client.post = AsyncMock()
 
     cm = MagicMock()
     cm.__aenter__ = AsyncMock(return_value=client)
@@ -142,15 +156,33 @@ class TestSplitDocument:
             assert len(chunk) <= MAX_CHUNK_CHARS
 
 
-# ── _call_gemini (returns tuple) ─────────────────────────────────────────────
+# ── _call_openrouter (returns tuple) ─────────────────────────────────────────────
 
-@pytest.mark.asyncio
-async def test_call_gemini_returns_content_and_finish_reason_on_stop():
-    client = _make_gemini_client(
-        _make_gemini_response("Analysis complete.", genai_types.FinishReason.STOP)
+
+# ── _call_openrouter (returns tuple) ──
+
+def _make_openrouter_status_response(
+    status_code: int,
+    headers: dict | None = None,
+) -> httpx.Response:
+    return httpx.Response(
+        status_code,
+        headers=headers,
+        json={"error": {"message": "simulated HTTP error"}},
+        request=httpx.Request(
+            "POST",
+            "https://openrouter.ai/api/v1/chat/completions",
+        ),
     )
 
-    content, finish_reason = await _call_gemini(
+
+@pytest.mark.asyncio
+async def test_call_openrouter_returns_content_and_finish_reason_on_stop():
+    client = _make_openrouter_client(
+        _make_openrouter_response("Analysis complete.", "stop")
+    )
+
+    content, finish_reason = await _call_openrouter(
         client=client,
         system_prompt="sys",
         user_message="user",
@@ -159,246 +191,256 @@ async def test_call_gemini_returns_content_and_finish_reason_on_stop():
 
     assert content == "Analysis complete."
     assert finish_reason == "stop"
+    client.post.assert_awaited_once()
+    request_payload = client.post.await_args.kwargs["json"]
+    assert request_payload["reasoning"] == {"effort": "none"}
 
 
 @pytest.mark.asyncio
-async def test_call_gemini_maps_max_tokens_to_length_without_raising():
-    """
-    _call_gemini must return the tuple even when the model hit MAX_TOKENS,
-    normalised to 'length'. Handling truncation is the caller's responsibility.
-    """
-    client = _make_gemini_client(
-        _make_gemini_response(
-            "Rapport partiel…", genai_types.FinishReason.MAX_TOKENS
-        )
+async def test_call_openrouter_maps_length_without_raising():
+    client = _make_openrouter_client(
+        _make_openrouter_response("Rapport partiel…", "length")
     )
 
-    content, finish_reason = await _call_gemini(
-        client=client,
-        system_prompt="sys",
-        user_message="user",
-        max_tokens=100,
+    content, finish_reason = await _call_openrouter(
+        client, "sys", "user", 100
     )
 
     assert finish_reason == "length"
     assert content == "Rapport partiel…"
 
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "finish_reason",
-    [
-        genai_types.FinishReason.SAFETY,
-        genai_types.FinishReason.RECITATION,
-        genai_types.FinishReason.BLOCKLIST,
-        genai_types.FinishReason.OTHER,
-    ],
+    ["content_filter", "error", "tool_calls", "unknown"],
 )
-async def test_call_gemini_raises_on_unexpected_finish_reason(finish_reason):
-    client = _make_gemini_client(
-        _make_gemini_response("Blocked or incomplete response.", finish_reason)
+async def test_call_openrouter_raises_on_unexpected_finish_reason(
+    finish_reason,
+):
+    client = _make_openrouter_client(
+        _make_openrouter_response(
+            "Blocked or incomplete response.",
+            finish_reason,
+        )
     )
 
     with pytest.raises(AIFinishReasonError):
-        await _call_gemini(client, "sys", "user", 100)
+        await _call_openrouter(client, "sys", "user", 100)
 
 
 @pytest.mark.asyncio
-async def test_call_gemini_raises_when_finish_reason_is_missing():
-    response = _make_gemini_response("Some response.")
-    response.candidates[0].finish_reason = None
-    client = _make_gemini_client(response)
+async def test_call_openrouter_raises_when_finish_reason_is_missing():
+    client = _make_openrouter_client(
+        _make_openrouter_response("Some response.", None)
+    )
 
-    with pytest.raises(AIFinishReasonError, match="UNKNOWN"):
-        await _call_gemini(client, "sys", "user", 100)
+    with pytest.raises(AIFinishReasonError):
+        await _call_openrouter(client, "sys", "user", 100)
+
 
 @pytest.mark.asyncio
-async def test_call_gemini_raises_on_empty_content():
-    client = _make_gemini_client(_make_gemini_response(""))
+async def test_call_openrouter_raises_on_empty_content():
+    client = _make_openrouter_client(
+        _make_openrouter_response("")
+    )
 
     with pytest.raises(RuntimeError, match="empty"):
-        await _call_gemini(client, "sys", "user", 100)
+        await _call_openrouter(client, "sys", "user", 100)
 
 
 @pytest.mark.asyncio
-async def test_call_gemini_raises_on_malformed_response():
-    malformed = MagicMock()
-    malformed.candidates = []
-    client = _make_gemini_client(malformed)
+async def test_call_openrouter_raises_on_malformed_response():
+    malformed = httpx.Response(
+        200,
+        json={"choices": []},
+        request=httpx.Request(
+            "POST",
+            "https://openrouter.ai/api/v1/chat/completions",
+        ),
+    )
+    client = _make_openrouter_client(malformed)
 
     with pytest.raises(RuntimeError):
-        await _call_gemini(client, "sys", "user", 100)
+        await _call_openrouter(client, "sys", "user", 100)
 
 
 @pytest.mark.asyncio
-async def test_call_gemini_retries_on_rate_limit_then_succeeds(monkeypatch):
+async def test_call_openrouter_retries_on_rate_limit_then_succeeds(monkeypatch):
     import app.services.ai_analyzer as analyzer
 
     monkeypatch.setattr(analyzer.asyncio, "sleep", AsyncMock())
 
-    rate_limited = genai_errors.ClientError(
-        code=429, response_json={"error": {"message": "rate limited"}}
-    )
-    success = _make_gemini_response(
-        "Analysis complete.", genai_types.FinishReason.STOP
-    )
-    client = _make_gemini_client([rate_limited, success])
+    rate_limited = _make_openrouter_status_response(429)
+    success = _make_openrouter_response("Analysis complete.")
+    client = _make_openrouter_client([rate_limited, success])
 
-    content, finish_reason = await _call_gemini(client, "sys", "user", 200)
+    content, finish_reason = await _call_openrouter(
+        client, "sys", "user", 200
+    )
 
     assert content == "Analysis complete."
     assert finish_reason == "stop"
-    assert client.aio.models.generate_content.call_count == 2
+    assert client.post.await_count == 2
 
 
 @pytest.mark.asyncio
-async def test_call_gemini_retries_on_503_then_succeeds(monkeypatch):
+async def test_call_openrouter_retries_on_503_then_succeeds(monkeypatch):
     import app.services.ai_analyzer as analyzer
 
     monkeypatch.setattr(analyzer.asyncio, "sleep", AsyncMock())
 
-    overloaded = genai_errors.ServerError(
-        code=503, response_json={"error": {"message": "Service temporarily overloaded"}}
-    )
-    success = _make_gemini_response(
-        "Analysis complete.", genai_types.FinishReason.STOP
-    )
-    client = _make_gemini_client([overloaded, success])
+    overloaded = _make_openrouter_status_response(503)
+    success = _make_openrouter_response("Analysis complete.")
+    client = _make_openrouter_client([overloaded, success])
 
-    content, finish_reason = await _call_gemini(client, "sys", "user", 200)
+    content, finish_reason = await _call_openrouter(
+        client, "sys", "user", 200
+    )
 
     assert content == "Analysis complete."
     assert finish_reason == "stop"
-    assert client.aio.models.generate_content.call_count == 2
+    assert client.post.await_count == 2
 
 
 @pytest.mark.asyncio
-async def test_call_gemini_stops_after_three_retryable_errors(monkeypatch):
+async def test_call_openrouter_stops_after_three_retryable_errors(monkeypatch):
     import app.services.ai_analyzer as analyzer
 
     monkeypatch.setattr(analyzer.asyncio, "sleep", AsyncMock())
 
-    overloaded = genai_errors.ServerError(
-        code=503, response_json={"error": {"message": "Service temporarily overloaded"}}
+    overloaded = _make_openrouter_status_response(503)
+    client = _make_openrouter_client(
+        [overloaded, overloaded, overloaded]
     )
-    client = _make_gemini_client([overloaded, overloaded, overloaded])
 
     with pytest.raises(AIStatusError) as exc_info:
-        await _call_gemini(client, "sys", "user", 200)
+        await _call_openrouter(client, "sys", "user", 200)
 
     assert exc_info.value.status_code == 503
-    assert client.aio.models.generate_content.call_count == 3
+    assert client.post.await_count == 3
 
 
 @pytest.mark.asyncio
-async def test_call_gemini_raises_status_error_on_permanent_error():
-    bad_request = genai_errors.ClientError(
-        code=400, response_json={"error": {"message": "bad request"}}
-    )
-    client = _make_gemini_error_client(bad_request)
+async def test_call_openrouter_raises_status_error_on_permanent_error():
+    bad_request = _make_openrouter_status_response(400)
+    client = _make_openrouter_client(bad_request)
 
     with pytest.raises(AIStatusError) as exc_info:
-        await _call_gemini(client, "sys", "user", 100)
+        await _call_openrouter(client, "sys", "user", 100)
 
     assert exc_info.value.status_code == 400
-    assert client.aio.models.generate_content.call_count == 1
+    assert client.post.await_count == 1
 
 
 @pytest.mark.asyncio
-async def test_call_gemini_raises_connection_error(monkeypatch):
+async def test_call_openrouter_raises_connection_error(monkeypatch):
     import app.services.ai_analyzer as analyzer
 
     monkeypatch.setattr(analyzer.asyncio, "sleep", AsyncMock())
 
-    client = _make_gemini_error_client(httpx.ConnectError("connection refused"))
+    client = _make_openrouter_error_client(
+        httpx.ConnectError("connection refused")
+    )
 
     with pytest.raises(AIConnectionError):
-        await _call_gemini(client, "sys", "user", 100)
+        await _call_openrouter(client, "sys", "user", 100)
 
 
 @pytest.mark.asyncio
-async def test_call_gemini_raises_timeout_error(monkeypatch):
+async def test_call_openrouter_raises_timeout_error(monkeypatch):
     import app.services.ai_analyzer as analyzer
 
     monkeypatch.setattr(analyzer.asyncio, "sleep", AsyncMock())
 
-    client = _make_gemini_error_client(httpx.TimeoutException("timed out"))
+    client = _make_openrouter_error_client(
+        httpx.TimeoutException("timed out")
+    )
 
     with pytest.raises(AITimeoutError):
-        await _call_gemini(client, "sys", "user", 100)
+        await _call_openrouter(client, "sys", "user", 100)
 
 
-# ── _extract_chunk — recovery strategy ───────────────────────────────────────
+# ── _extract_chunk — recovery strategy ──
 
 @pytest.mark.asyncio
 async def test_extract_chunk_returns_content_when_primary_completes():
-    """Primary extraction succeeds → return it directly, no retry."""
-    client = _make_gemini_client(
-        _make_gemini_response("DEADLINE: 2025-12-31", genai_types.FinishReason.STOP)
+    client = _make_openrouter_client(
+        _make_openrouter_response("DEADLINE: 2025-12-31", "stop")
     )
 
-    result = await _extract_chunk(client, "budget: 100 000 MAD", 1, 3)
+    result = await _extract_chunk(
+        client, "budget: 100 000 MAD", 1, 3
+    )
 
     assert "DEADLINE: 2025-12-31" in result
-    assert client.aio.models.generate_content.call_count == 1   # no retry
+    assert client.post.await_count == 1
 
 
 @pytest.mark.asyncio
 async def test_extract_chunk_retries_on_primary_truncation_and_succeeds():
-    """
-    Primary truncates → fallback is attempted → fallback completes.
-    The result must include the fallback content and a [FALLBACK] marker.
-    """
-    client = _make_gemini_client([
-        _make_gemini_response(
-            "Rapport partiel coupé ici…", genai_types.FinishReason.MAX_TOKENS
-        ),  # primary
-        _make_gemini_response(
-            "• Deadline: 31/12/2025 [p.2]", genai_types.FinishReason.STOP
-        ),  # fallback OK
+    client = _make_openrouter_client([
+        _make_openrouter_response("Rapport partiel coupé ici…", "length"),
+        _make_openrouter_response("• Deadline: 31/12/2025 [p.2]", "stop"),
     ])
 
     result = await _extract_chunk(client, "some chunk text", 2, 5)
 
     assert "[FALLBACK" in result
     assert "Deadline: 31/12/2025" in result
-    assert client.aio.models.generate_content.call_count == 2
-
+    assert client.post.await_count == 2
 
 @pytest.mark.asyncio
-async def test_extract_chunk_accepts_partial_when_both_truncated():
-    """
-    Primary truncates AND fallback also truncates → accept partial with
-    a [PARTIAL] marker rather than raising an exception.
-    The overall analysis can still proceed with incomplete evidence.
-    """
-    client = _make_gemini_client([
-        _make_gemini_response("Coupé 1…", genai_types.FinishReason.MAX_TOKENS),
-        _make_gemini_response("Coupé 2…", genai_types.FinishReason.MAX_TOKENS),
+async def test_extract_chunk_keeps_primary_content_when_fallback_is_empty():
+    client = _make_openrouter_client([
+        _make_openrouter_response("Primary partial evidence", "length"),
+        _make_openrouter_response("", "stop"),
     ])
+    status = ChunkExtractionStatus()
 
-    result = await _extract_chunk(client, "a very dense chunk", 3, 5)
+    result = await _extract_chunk(
+        client, "some chunk text", 1, 2, status
+    )
 
     assert "[PARTIAL" in result
-    assert client.aio.models.generate_content.call_count == 2  # both attempts made
+    assert "Primary partial evidence" in result
+    assert status.fallback_used is True
+    assert status.truncated is True
+    assert client.post.await_count == 2
+@pytest.mark.asyncio
+async def test_extract_chunk_accepts_partial_when_both_truncated():
+    client = _make_openrouter_client([
+        _make_openrouter_response("Coupé 1…", "length"),
+        _make_openrouter_response("Coupé 2…", "length"),
+    ])
+
+    result = await _extract_chunk(
+        client, "a very dense chunk", 3, 5
+    )
+
+    assert "[PARTIAL" in result
+    assert client.post.await_count == 2
 
 
 @pytest.mark.asyncio
 async def test_extract_chunk_propagates_connection_error(monkeypatch):
-    """Network errors must propagate — they are not a truncation event."""
     import app.services.ai_analyzer as analyzer
 
     monkeypatch.setattr(analyzer.asyncio, "sleep", AsyncMock())
 
-    client = _make_gemini_error_client(httpx.ConnectError("connection refused"))
+    client = _make_openrouter_error_client(
+        httpx.ConnectError("connection refused")
+    )
 
     with pytest.raises(AIConnectionError):
         await _extract_chunk(client, "chunk", 1, 1)
 
+
 @pytest.mark.asyncio
 async def test_extract_chunk_records_fallback_used():
-    client = _make_gemini_client([
-        _make_gemini_response("Partial", genai_types.FinishReason.MAX_TOKENS),
-        _make_gemini_response("Complete fallback", genai_types.FinishReason.STOP),
+    client = _make_openrouter_client([
+        _make_openrouter_response("Partial", "length"),
+        _make_openrouter_response("Complete fallback", "stop"),
     ])
     status = ChunkExtractionStatus()
 
@@ -411,9 +453,9 @@ async def test_extract_chunk_records_fallback_used():
 
 @pytest.mark.asyncio
 async def test_extract_chunk_records_both_attempts_truncated():
-    client = _make_gemini_client([
-        _make_gemini_response("Partial 1", genai_types.FinishReason.MAX_TOKENS),
-        _make_gemini_response("Partial 2", genai_types.FinishReason.MAX_TOKENS),
+    client = _make_openrouter_client([
+        _make_openrouter_response("Partial 1", "length"),
+        _make_openrouter_response("Partial 2", "length"),
     ])
     status = ChunkExtractionStatus()
 
@@ -422,6 +464,7 @@ async def test_extract_chunk_records_both_attempts_truncated():
     assert "[PARTIAL" in result
     assert status.fallback_used is True
     assert status.truncated is True
+
 
 def test_get_retry_delay_returns_none_when_retry_after_exceeds_limit():
     exc = MagicMock()
@@ -443,6 +486,7 @@ def test_get_retry_delay_clamps_negative_retry_after_to_zero():
 
     assert _get_retry_delay(exc, attempt=1) == 0
 
+
 def test_get_retry_delay_handles_http_date_without_timezone():
     from email.utils import formatdate
 
@@ -456,32 +500,27 @@ def test_get_retry_delay_handles_http_date_without_timezone():
     assert delay is not None
     assert 0 <= delay <= 30
 
+
 @pytest.mark.asyncio
-async def test_call_gemini_skips_retry_when_retry_after_exceeds_limit(monkeypatch):
+async def test_call_openrouter_skips_retry_when_retry_after_exceeds_limit(
+    monkeypatch,
+):
     import app.services.ai_analyzer as analyzer
-    import httpx
 
     sleep_mock = AsyncMock()
     monkeypatch.setattr(analyzer.asyncio, "sleep", sleep_mock)
 
-    response = httpx.Response(
+    overloaded = _make_openrouter_status_response(
         503,
         headers={"Retry-After": "60"},
     )
-
-    overloaded = genai_errors.ServerError(
-        code=503,
-        response_json={"error": {"message": "Service temporarily overloaded"}},
-        response=response,
-    )
-
-    client = _make_gemini_error_client(overloaded)
+    client = _make_openrouter_client(overloaded)
 
     with pytest.raises(AIStatusError) as exc_info:
-        await _call_gemini(client, "sys", "user", 200)
+        await _call_openrouter(client, "sys", "user", 200)
 
     assert exc_info.value.status_code == 503
-    assert client.aio.models.generate_content.call_count == 1
+    assert client.post.await_count == 1
     sleep_mock.assert_not_awaited()
 
 # ── Token budget sanity guards ────────────────────────────────────────────────
@@ -613,6 +652,9 @@ class TestTechnicalSpecifications:
                 "screen_size_inches": value,
             }
         })
+        assert isinstance(result, dict)
+        tender = result["tender"]
+        assert isinstance(tender, dict)
 
         assert result["tender"]["screen_size_inches"] is None
 
@@ -622,6 +664,9 @@ class TestTechnicalSpecifications:
                 "screen_size_inches": 15.6,
             }
         })
+        assert isinstance(result, dict)
+        tender = result["tender"]
+        assert isinstance(tender, dict)
 
         assert result["tender"]["screen_size_inches"] == 15.6
 
@@ -741,7 +786,7 @@ async def test_extract_structured_tender_merges_multiple_chunks():
     async def fake_extract_chunk(client, chunk, index, total, status=None):
         return f"Evidence for chunk {index}"
 
-    async def fake_call_gemini(
+    async def fake_call_openrouter(
         client, system_prompt, user_message, max_tokens
     ):
         return next(responses), "stop"
@@ -749,7 +794,7 @@ async def test_extract_structured_tender_merges_multiple_chunks():
     with (
         patch.object(ai_analyzer, "split_document", return_value=["chunk 1", "chunk 2"]),
         patch.object(ai_analyzer, "_extract_chunk", side_effect=fake_extract_chunk),
-        patch.object(ai_analyzer, "_call_gemini", side_effect=fake_call_gemini),
+        patch.object(ai_analyzer, "_call_openrouter", side_effect=fake_call_openrouter),
         patch.object(ai_analyzer, "_open_client", return_value=_fake_open_client()),
     ):
 
@@ -822,7 +867,7 @@ async def _run_structured_extraction(
     async def fake_extract_chunk(client, chunk, index, total, status=None):
         return f"Evidence for chunk {index}"
 
-    async def fake_call_gemini(
+    async def fake_call_openrouter(
         client, system_prompt, user_message, max_tokens
     ):
         return next(responses), "stop"
@@ -830,7 +875,7 @@ async def _run_structured_extraction(
     with (
         patch.object(ai_analyzer, "split_document", return_value=list(chunks)),
         patch.object(ai_analyzer, "_extract_chunk", side_effect=fake_extract_chunk),
-        patch.object(ai_analyzer, "_call_gemini", side_effect=fake_call_gemini),
+        patch.object(ai_analyzer, "_call_openrouter", side_effect=fake_call_openrouter),
         patch.object(ai_analyzer, "_open_client", return_value=_fake_open_client()),
     ):
         return await ai_analyzer.extract_structured_tender(document_text)
@@ -1387,7 +1432,7 @@ async def _run_analyze_tender(
             return chunk_evidence(status)
         return chunk_evidence
 
-    async def fake_call_gemini(
+    async def fake_call_openrouter(
         client, system_prompt, user_message, max_tokens
     ):
         return final_content, final_finish
@@ -1395,7 +1440,7 @@ async def _run_analyze_tender(
     with (
         patch.object(ai_analyzer, "split_document", return_value=["chunk"]),
         patch.object(ai_analyzer, "_extract_chunk", side_effect=fake_extract_chunk),
-        patch.object(ai_analyzer, "_call_gemini", side_effect=fake_call_gemini),
+        patch.object(ai_analyzer, "_call_openrouter", side_effect=fake_call_openrouter),
         patch.object(ai_analyzer, "_open_client", return_value=_fake_open_client()),
     ):
         return await ai_analyzer.analyze_tender("text", metadata=metadata)
@@ -1498,7 +1543,7 @@ async def _run_structured_metadata(responses, chunks, document_text, metadata):
     async def fake_extract_chunk(client, chunk, index, total, status=None):
         return f"Evidence for chunk {index}"
 
-    async def fake_call_gemini(
+    async def fake_call_openrouter(
         client, system_prompt, user_message, max_tokens
     ):
         response = next(response_iter)
@@ -1511,7 +1556,7 @@ async def _run_structured_metadata(responses, chunks, document_text, metadata):
     with (
         patch.object(ai_analyzer, "split_document", return_value=list(chunks)),
         patch.object(ai_analyzer, "_extract_chunk", side_effect=fake_extract_chunk),
-        patch.object(ai_analyzer, "_call_gemini", side_effect=fake_call_gemini),
+        patch.object(ai_analyzer, "_call_openrouter", side_effect=fake_call_openrouter),
         patch.object(ai_analyzer, "_open_client", return_value=_fake_open_client()),
     ):
         return await ai_analyzer.extract_structured_tender(
@@ -1542,7 +1587,7 @@ async def test_extract_structured_tender_raises_on_truncation_without_metadata()
     async def fake_extract_chunk(client, chunk, index, total, status=None):
         return "Evidence"
 
-    async def fake_call_gemini(
+    async def fake_call_openrouter(
         client, system_prompt, user_message, max_tokens
     ):
         return json.dumps(_technical_payload()), "length"
@@ -1550,7 +1595,7 @@ async def test_extract_structured_tender_raises_on_truncation_without_metadata()
     with (
         patch.object(ai_analyzer, "split_document", return_value=["chunk"]),
         patch.object(ai_analyzer, "_extract_chunk", side_effect=fake_extract_chunk),
-        patch.object(ai_analyzer, "_call_gemini", side_effect=fake_call_gemini),
+        patch.object(ai_analyzer, "_call_openrouter", side_effect=fake_call_openrouter),
         patch.object(ai_analyzer, "_open_client", return_value=_fake_open_client()),
     ):
 
@@ -1597,7 +1642,7 @@ async def test_extract_structured_tender_keeps_validated_partial_on_failure():
     assert metadata.structured_failed is True
 
 @pytest.mark.asyncio
-async def test_extract_structured_tender_keeps_partial_on_gemini_429():
+async def test_extract_structured_tender_keeps_partial_on_openrouter_429():
     from app.services import ai_analyzer
 
     metadata = AnalysisMetadata()
@@ -1634,7 +1679,7 @@ async def test_extract_structured_tender_handles_evidence_extraction_failure():
         _technical_payload(title="Marché partiel", quantity=10)
     )
 
-    async def fake_call_gemini(
+    async def fake_call_openrouter(
         client, system_prompt, user_message, max_tokens
     ):
         return valid, "stop"
@@ -1642,7 +1687,7 @@ async def test_extract_structured_tender_handles_evidence_extraction_failure():
     with (
         patch.object(ai_analyzer, "split_document", return_value=["chunk 1", "chunk 2"]),
         patch.object(ai_analyzer, "_extract_chunk", side_effect=fake_extract_chunk),
-        patch.object(ai_analyzer, "_call_gemini", side_effect=fake_call_gemini),
+        patch.object(ai_analyzer, "_call_openrouter", side_effect=fake_call_openrouter),
         patch.object(ai_analyzer, "_open_client", return_value=_fake_open_client()),
     ):
         result = await ai_analyzer.extract_structured_tender(
@@ -1661,7 +1706,7 @@ async def test_extract_structured_tender_raises_on_invalid_json_without_metadata
     async def fake_extract_chunk(client, chunk, index, total, status=None):
         return "Evidence"
 
-    async def fake_call_gemini(
+    async def fake_call_openrouter(
         client, system_prompt, user_message, max_tokens
     ):
         return "not valid json", "stop"
@@ -1669,7 +1714,7 @@ async def test_extract_structured_tender_raises_on_invalid_json_without_metadata
     with (
         patch.object(ai_analyzer, "split_document", return_value=["chunk"]),
         patch.object(ai_analyzer, "_extract_chunk", side_effect=fake_extract_chunk),
-        patch.object(ai_analyzer, "_call_gemini", side_effect=fake_call_gemini),
+        patch.object(ai_analyzer, "_call_openrouter", side_effect=fake_call_openrouter),
         patch.object(ai_analyzer, "_open_client", return_value=_fake_open_client()),
     ):
 
@@ -1677,13 +1722,13 @@ async def test_extract_structured_tender_raises_on_invalid_json_without_metadata
             await ai_analyzer.extract_structured_tender("text")
 
 @pytest.mark.asyncio
-async def test_extract_structured_tender_raises_on_gemini_429_without_metadata():
+async def test_extract_structured_tender_raises_on_OpenRouter_429_without_metadata():
     from app.services import ai_analyzer
 
     async def fake_extract_chunk(client, chunk, index, total, status=None):
         return "Evidence"
 
-    async def fake_call_gemini(
+    async def fake_call_openrouter(
         client, system_prompt, user_message, max_tokens
     ):
         raise ai_analyzer.AIStatusError(429, "Rate limit exceeded")
@@ -1691,7 +1736,7 @@ async def test_extract_structured_tender_raises_on_gemini_429_without_metadata()
     with (
         patch.object(ai_analyzer, "split_document", return_value=["chunk"]),
         patch.object(ai_analyzer, "_extract_chunk", side_effect=fake_extract_chunk),
-        patch.object(ai_analyzer, "_call_gemini", side_effect=fake_call_gemini),
+        patch.object(ai_analyzer, "_call_openrouter", side_effect=fake_call_openrouter),
         patch.object(ai_analyzer, "_open_client", return_value=_fake_open_client()),
     ):
         with pytest.raises(ai_analyzer.AIStatusError) as exc_info:
@@ -1779,7 +1824,7 @@ async def _run_structured_evidence_status(
             mutate_status(status)
         return f"Evidence for chunk {index}"
 
-    async def fake_call_gemini(
+    async def fake_call_openrouter(
         client, system_prompt, user_message, max_tokens
     ):
         return next(response_iter)
@@ -1787,7 +1832,7 @@ async def _run_structured_evidence_status(
     with (
         patch.object(ai_analyzer, "split_document", return_value=list(chunks)),
         patch.object(ai_analyzer, "_extract_chunk", side_effect=fake_extract_chunk),
-        patch.object(ai_analyzer, "_call_gemini", side_effect=fake_call_gemini),
+        patch.object(ai_analyzer, "_call_openrouter", side_effect=fake_call_openrouter),
         patch.object(ai_analyzer, "_open_client", return_value=_fake_open_client()),
     ):
         return await ai_analyzer.extract_structured_tender(
@@ -1877,9 +1922,13 @@ def test_normalise_structured_payload_stringifies_numeric_evidence():
     payload = _sample_payload_with_numeric_evidence()
 
     normalised = _normalise_structured_payload(payload)
-
     assert isinstance(normalised, dict)
-    values = [item["extracted_value"] for item in normalised["evidence"]]
+
+    evidence = normalised["evidence"]
+
+    assert isinstance(evidence, list)
+
+    values = [item["extracted_value"] for item in evidence]
 
     assert values == ["250000", "500", "16", "512", "15.6", "24"]
     assert all(isinstance(value, str) for value in values)
@@ -1895,7 +1944,9 @@ def test_normalise_structured_payload_keeps_tender_numbers_native():
     )
 
     normalised = _normalise_structured_payload(payload)
+    assert isinstance(normalised, dict)
     tender = normalised["tender"]
+    assert isinstance(tender, dict)
 
     assert tender["quantity"] == 500
     assert tender["ram_gb"] == 16
@@ -1923,10 +1974,11 @@ def test_normalise_structured_payload_rejects_non_scalar_evidence_values():
     ]
 
     normalised = _normalise_structured_payload(payload)
-
-    assert normalised["evidence"][0]["extracted_value"] == [1, 2]
-    assert normalised["evidence"][1]["extracted_value"] == {"a": 1}
     assert isinstance(normalised, dict)
+    evidence = normalised["evidence"]
+    assert isinstance(evidence, list)
+    assert evidence[0]["extracted_value"] == [1, 2]
+    assert evidence[1]["extracted_value"] == {"a": 1}
     with pytest.raises(ValidationError):
         StructuredTenderAnalysis.model_validate(normalised)
 
@@ -2069,39 +2121,52 @@ def test_authority_values_equivalent(first, second, expected):
 
     assert _authority_values_equivalent(first, second) is expected
 
-class TestGeminiClientLifecycle:
+
+class TestOpenRouterClientLifecycle:
 
     def test_create_client_rejects_missing_api_key(self, monkeypatch):
-        monkeypatch.setattr(settings, "gemini_api_key", "")
+        monkeypatch.setattr(settings, "openrouter_api_key", "")
 
-        with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
+        with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):
             _create_client()
 
     def test_create_client_rejects_missing_model(self, monkeypatch):
-        monkeypatch.setattr(settings, "gemini_api_key", "test-api-key")
-        monkeypatch.setattr(settings, "gemini_model", "")
+        monkeypatch.setattr(settings, "openrouter_api_key", "test-api-key")
+        monkeypatch.setattr(settings, "openrouter_model", "")
 
-        with pytest.raises(RuntimeError, match="GEMINI_MODEL"):
+        with pytest.raises(RuntimeError, match="OPENROUTER_MODEL"):
             _create_client()
 
     def test_create_client_uses_configured_credentials(self, monkeypatch):
         fake_client = MagicMock()
+        client_factory = MagicMock(return_value=fake_client)
 
-        monkeypatch.setattr(settings, "gemini_api_key", "test-api-key")
-        monkeypatch.setattr(settings, "gemini_model", "test-model")
+        monkeypatch.setattr(settings, "openrouter_api_key", "test-api-key")
+        monkeypatch.setattr(settings, "openrouter_model", "test-model")
         monkeypatch.setattr(
-            "app.services.ai_analyzer.genai.Client",
-            MagicMock(return_value=fake_client),
+            settings,
+            "openrouter_base_url",
+            "https://openrouter.ai/api/v1",
+        )
+        monkeypatch.setattr(
+            "app.services.ai_analyzer.httpx.AsyncClient",
+            client_factory,
         )
 
         result = _create_client()
 
         assert result is fake_client
+        client_factory.assert_called_once()
+
+        kwargs = client_factory.call_args.kwargs
+        assert kwargs["base_url"] == "https://openrouter.ai/api/v1/"
+        assert kwargs["headers"]["Authorization"] == "Bearer test-api-key"
+        assert kwargs["timeout"].read == 180.0
 
     @pytest.mark.asyncio
     async def test_open_client_closes_transport_after_success(self, monkeypatch):
         fake_client = MagicMock()
-        fake_client.aio.aclose = AsyncMock()
+        fake_client.aclose = AsyncMock()
 
         monkeypatch.setattr(
             "app.services.ai_analyzer._create_client",
@@ -2111,12 +2176,12 @@ class TestGeminiClientLifecycle:
         async with _open_client() as client:
             assert client is fake_client
 
-        fake_client.aio.aclose.assert_awaited_once()
+        fake_client.aclose.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_open_client_closes_transport_after_exception(self, monkeypatch):
         fake_client = MagicMock()
-        fake_client.aio.aclose = AsyncMock()
+        fake_client.aclose = AsyncMock()
 
         monkeypatch.setattr(
             "app.services.ai_analyzer._create_client",
@@ -2127,7 +2192,8 @@ class TestGeminiClientLifecycle:
             async with _open_client():
                 raise RuntimeError("simulated failure")
 
-        fake_client.aio.aclose.assert_awaited_once()
+        fake_client.aclose.assert_awaited_once()
+
 
 @pytest.mark.parametrize(
     ("value", "minimum", "expected"),
