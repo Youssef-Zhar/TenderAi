@@ -936,6 +936,75 @@ def _build_page_map(text: str) -> dict[int, str]:
     return {}
 
 
+_NUMERIC_EVIDENCE_FIELDS = {
+    "estimated_budget",
+    "quantity",
+    "ram_gb",
+    "storage_gb",
+    "screen_size_inches",
+    "warranty_months",
+}
+
+
+def _normalise_number_token(value: str) -> Decimal | None:
+    """Parse one numeric value while tolerating common grouping separators."""
+    cleaned = re.sub(r"[\\s\\u00a0\\u202f]", "", value)
+    if not cleaned or not re.fullmatch(r"\\d+(?:[,.]\\d+)?", cleaned):
+        return None
+
+    if "," in cleaned and "." in cleaned:
+        decimal_separator = "," if cleaned.rfind(",") > cleaned.rfind(".") else "."
+        thousands_separator = "." if decimal_separator == "," else ","
+        cleaned = cleaned.replace(thousands_separator, "")
+        cleaned = cleaned.replace(decimal_separator, ".")
+    elif "," in cleaned or "." in cleaned:
+        separator = "," if "," in cleaned else "."
+        integer_part, fractional_part = cleaned.rsplit(separator, 1)
+        if len(fractional_part) == 3:
+            cleaned = integer_part + fractional_part
+        else:
+            cleaned = integer_part + "." + fractional_part
+
+    try:
+        return Decimal(cleaned)
+    except InvalidOperation:
+        return None
+
+
+def _evidence_value_supported(item: TenderEvidenceItem, quote: str) -> bool:
+    """Check that the extracted scalar value is actually present in its quote."""
+    value = (item.extracted_value or "").strip()
+    if not value:
+        return False
+
+    normalised_value = _normalise_whitespace(value).casefold()
+    normalised_quote = _normalise_whitespace(quote).casefold()
+    if normalised_value in normalised_quote:
+        return True
+
+    if item.field_name == "provisional_guarantee":
+        expected_money = _money_signature(value)
+        quoted_money = _money_signature(quote)
+        if expected_money is not None and quoted_money is not None:
+            return expected_money == quoted_money
+
+    if item.field_name in _NUMERIC_EVIDENCE_FIELDS:
+        number_pattern = r"(?<![\\w])\\d+(?:[ \\u00a0\\u202f]\\d{3})*(?:[,.]\\d+)?(?![\\w])"
+        expected_tokens = re.findall(number_pattern, value)
+        quote_tokens = re.findall(number_pattern, quote)
+        if len(expected_tokens) != 1:
+            return False
+        expected_number = _normalise_number_token(expected_tokens[0])
+        if expected_number is None:
+            return False
+        return any(
+            _normalise_number_token(token) == expected_number
+            for token in quote_tokens
+        )
+
+    return False
+
+
 def _verify_evidence(
     evidence: list[TenderEvidenceItem],
     document_text: str,
@@ -968,6 +1037,18 @@ def _verify_evidence(
             for number, page_text in page_map.items()
             if quote in page_text
         ]
+
+        matching_page_numbers = [
+            number
+            for number, page_text in page_map.items()
+            if quote in page_text
+        ]
+        if not any(
+            _evidence_value_supported(item, page_map[number])
+            for number in matching_page_numbers
+        ):
+            counts["rejected"] += 1
+            continue
 
         original_page = item.page_number
         if (
