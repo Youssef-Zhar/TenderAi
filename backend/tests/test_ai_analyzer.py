@@ -1314,12 +1314,14 @@ async def test_verify_evidence_rejects_value_not_present_in_quote():
             "source_text": "Quantité : 10 unités",
         }
     )
+    payload["tender"]["quantity"] = 20
 
     result = await _run_structured_extraction(
         [json.dumps(payload)], ["chunk"], document_text=document
     )
 
     assert result.evidence == []
+    assert result.tender.quantity is None
     assert result.verified_evidence_count == 0
     assert result.rejected_evidence_count == 1
 
@@ -1341,6 +1343,7 @@ async def test_verify_evidence_accepts_numeric_value_with_grouping_spaces():
     )
 
     assert len(result.evidence) == 1
+    assert result.tender.estimated_budget == 250000
     assert result.verified_evidence_count == 1
     assert result.rejected_evidence_count == 0
 
@@ -1356,12 +1359,14 @@ async def test_verify_evidence_rejects_wrong_numeric_value_even_if_quote_exists(
             "source_text": "RAM : 16 Go",
         }
     )
+    payload["tender"]["ram_gb"] = 32
 
     result = await _run_structured_extraction(
         [json.dumps(payload)], ["chunk"], document_text=document
     )
 
     assert result.evidence == []
+    assert result.tender.ram_gb is None
     assert result.verified_evidence_count == 0
     assert result.rejected_evidence_count == 1
 
