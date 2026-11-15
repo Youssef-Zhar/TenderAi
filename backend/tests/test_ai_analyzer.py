@@ -1304,6 +1304,69 @@ async def test_verify_evidence_corrects_wrong_page_number():
 
 
 @pytest.mark.asyncio
+async def test_verify_evidence_rejects_value_not_present_in_quote():
+    document = "--- Page 1 ---\\nQuantité : 10 unités"
+    payload = _payload_with_evidence(
+        {
+            "field_name": "quantity",
+            "extracted_value": "20",
+            "page_number": 1,
+            "source_text": "Quantité : 10 unités",
+        }
+    )
+
+    result = await _run_structured_extraction(
+        [json.dumps(payload)], ["chunk"], document_text=document
+    )
+
+    assert result.evidence == []
+    assert result.verified_evidence_count == 0
+    assert result.rejected_evidence_count == 1
+
+
+@pytest.mark.asyncio
+async def test_verify_evidence_accepts_numeric_value_with_grouping_spaces():
+    document = "--- Page 1 ---\\nBudget estimé : 250 000 MAD"
+    payload = _payload_with_evidence(
+        {
+            "field_name": "estimated_budget",
+            "extracted_value": "250000",
+            "page_number": 1,
+            "source_text": "Budget estimé : 250 000 MAD",
+        }
+    )
+
+    result = await _run_structured_extraction(
+        [json.dumps(payload)], ["chunk"], document_text=document
+    )
+
+    assert len(result.evidence) == 1
+    assert result.verified_evidence_count == 1
+    assert result.rejected_evidence_count == 0
+
+
+@pytest.mark.asyncio
+async def test_verify_evidence_rejects_wrong_numeric_value_even_if_quote_exists():
+    document = "--- Page 1 ---\\nRAM : 16 Go"
+    payload = _payload_with_evidence(
+        {
+            "field_name": "ram_gb",
+            "extracted_value": "32",
+            "page_number": 1,
+            "source_text": "RAM : 16 Go",
+        }
+    )
+
+    result = await _run_structured_extraction(
+        [json.dumps(payload)], ["chunk"], document_text=document
+    )
+
+    assert result.evidence == []
+    assert result.verified_evidence_count == 0
+    assert result.rejected_evidence_count == 1
+
+
+@pytest.mark.asyncio
 async def test_verify_evidence_rejects_missing_quote():
     document = "--- Page 1 ---\nBudget estimé : 250 000 MAD"
     payload = _payload_with_evidence(
