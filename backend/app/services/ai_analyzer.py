@@ -1060,16 +1060,19 @@ def _evidence_matches_scalar(
     evidence_value = item.extracted_value.strip()
     scalar_text = str(scalar_value).strip()
 
-    if field_name in _NUMERIC_EVIDENCE_FIELDS:
-        expected = _normalise_number_token(scalar_text)
-        actual = _normalise_number_token(evidence_value)
-        return expected is not None and actual is not None and expected == actual
-
+    # Provisional guarantees are stored as amount strings (for example,
+    # "5 000 MAD"), so compare their amount/currency signature before the
+    # generic numeric-field path.
     if field_name == "provisional_guarantee":
         expected_money = _money_signature(scalar_text)
         actual_money = _money_signature(evidence_value)
         if expected_money is not None and actual_money is not None:
             return expected_money == actual_money
+
+    if field_name in _NUMERIC_EVIDENCE_FIELDS:
+        expected = _normalise_number_token(scalar_text)
+        actual = _normalise_number_token(evidence_value)
+        return expected is not None and actual is not None and expected == actual
 
     if field_name in {"deadline", "contracting_authority"}:
         return _scalar_values_equivalent(
