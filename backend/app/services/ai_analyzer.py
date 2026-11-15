@@ -1023,15 +1023,14 @@ def _evidence_value_supported(item: TenderEvidenceItem, quote: str) -> bool:
         if item.field_name not in labelled_fields:
             return False
 
-    if normalised_value in normalised_quote:
-        return True
-
     if item.field_name == "provisional_guarantee":
         expected_money = _money_signature(value)
         quoted_money = _money_signature(quote)
         if expected_money is not None and quoted_money is not None:
             return expected_money == quoted_money
 
+    # Numeric values must match a complete numeric token. A plain substring
+    # check would incorrectly accept 16 as evidence for 160, for example.
     if item.field_name in _NUMERIC_EVIDENCE_FIELDS:
         number_pattern = r"(?<![\w])\d+(?:[ \u00a0\u202f]\d{3})*(?:[,.]\d+)?(?![\w])"
         expected_tokens = re.findall(number_pattern, value)
@@ -1046,7 +1045,7 @@ def _evidence_value_supported(item: TenderEvidenceItem, quote: str) -> bool:
             for token in quote_tokens
         )
 
-    return False
+    return normalised_value in normalised_quote
 
 
 def _verify_evidence(
