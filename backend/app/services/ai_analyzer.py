@@ -943,7 +943,39 @@ _NUMERIC_EVIDENCE_FIELDS = {
     "storage_gb",
     "screen_size_inches",
     "warranty_months",
+    "provisional_guarantee",
 }
+
+_EVIDENCE_FIELD_LABELS = {
+    "estimated_budget": re.compile(
+        r"\\b(?:budget|montant|valeur|estimation)\\b", re.IGNORECASE
+    ),
+    "quantity": re.compile(
+        r"\\b(?:quantit[eé]|nombre d['’]?unit[eé]s|unit[eé]s)\\b",
+        re.IGNORECASE,
+    ),
+    "processor": re.compile(
+        r"\\b(?:processeur|processor|cpu)\\b", re.IGNORECASE
+    ),
+    "ram_gb": re.compile(
+        r"\\b(?:ram|m[eé]moire vive)\\b", re.IGNORECASE
+    ),
+    "storage_gb": re.compile(
+        r"\\b(?:stockage|capacit[eé] de stockage|ssd|disque dur)\\b",
+        re.IGNORECASE,
+    ),
+    "screen_size_inches": re.compile(
+        r"\\b(?:[eé]cran|diagonale|pouces)\\b", re.IGNORECASE
+    ),
+    "warranty_months": re.compile(
+        r"\\b(?:garantie|dur[eé]e de garantie)\\b", re.IGNORECASE
+    ),
+    "provisional_guarantee": re.compile(
+        r"\\b(?:caution|garantie provisoire|garantie de soumission)\\b",
+        re.IGNORECASE,
+    ),
+}
+
 
 
 def _normalise_number_token(value: str) -> Decimal | None:
@@ -979,6 +1011,18 @@ def _evidence_value_supported(item: TenderEvidenceItem, quote: str) -> bool:
 
     normalised_value = _normalise_whitespace(value).casefold()
     normalised_quote = _normalise_whitespace(quote).casefold()
+
+    # If the quote explicitly names a known tender field, do not accept it
+    # as evidence for a different field.
+    labelled_fields = {
+        field_name
+        for field_name, pattern in _EVIDENCE_FIELD_LABELS.items()
+        if pattern.search(normalised_quote)
+    }
+    if labelled_fields and item.field_name in _EVIDENCE_FIELD_LABELS:
+        if item.field_name not in labelled_fields:
+            return False
+
     if normalised_value in normalised_quote:
         return True
 
