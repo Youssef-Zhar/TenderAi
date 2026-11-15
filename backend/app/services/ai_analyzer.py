@@ -948,11 +948,11 @@ _NUMERIC_EVIDENCE_FIELDS = {
 
 _EVIDENCE_FIELD_LABELS = {
     "estimated_budget": re.compile(
-        r"\b(?:budget|montant|valeur|estimation)\b", re.IGNORECASE
+        r"\b(?:budget estim[eé]|budget pr[eé]visionnel|montant estim[eé]|valeur estim[eé]e|estimation du march[eé])\b",
+        re.IGNORECASE,
     ),
     "quantity": re.compile(
-        r"\b(?:quantit[eé]|nombre d['’]?unit[eé]s|unit[eé]s)\b",
-        re.IGNORECASE,
+        r"\b(?:quantit[eé]|nombre d['’]?unit[eé]s)\b", re.IGNORECASE
     ),
     "processor": re.compile(
         r"\b(?:processeur|processor|cpu)\b", re.IGNORECASE
@@ -965,17 +965,17 @@ _EVIDENCE_FIELD_LABELS = {
         re.IGNORECASE,
     ),
     "screen_size_inches": re.compile(
-        r"\b(?:[eé]cran|diagonale|pouces)\b", re.IGNORECASE
+        r"\b(?:[eé]cran|diagonale)\b", re.IGNORECASE
     ),
     "warranty_months": re.compile(
-        r"\b(?:garantie|dur[eé]e de garantie)\b", re.IGNORECASE
+        r"\b(?:dur[eé]e de garantie|p[eé]riode de garantie|garantie de \d+ mois)\b",
+        re.IGNORECASE,
     ),
     "provisional_guarantee": re.compile(
         r"\b(?:caution|garantie provisoire|garantie de soumission)\b",
         re.IGNORECASE,
     ),
 }
-
 
 
 def _normalise_number_token(value: str) -> Decimal | None:
