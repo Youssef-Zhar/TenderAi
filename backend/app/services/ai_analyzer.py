@@ -936,6 +936,155 @@ def _build_page_map(text: str) -> dict[int, str]:
     return {}
 
 
+_NUMERIC_EVIDENCE_FIELDS = {
+    "estimated_budget",
+    "quantity",
+    "ram_gb",
+    "storage_gb",
+    "screen_size_inches",
+    "warranty_months",
+    "provisional_guarantee",
+}
+
+_EVIDENCE_FIELD_LABELS = {
+    "estimated_budget": re.compile(
+        r"\b(?:budget estim[eé]|budget pr[eé]visionnel|montant estim[eé]|valeur estim[eé]e|estimation du march[eé])\b",
+        re.IGNORECASE,
+    ),
+    "quantity": re.compile(
+        r"\b(?:quantit[eé]|nombre d['’]?unit[eé]s)\b", re.IGNORECASE
+    ),
+    "processor": re.compile(
+        r"\b(?:processeur|processor|cpu)\b", re.IGNORECASE
+    ),
+    "ram_gb": re.compile(
+        r"\b(?:ram|m[eé]moire vive)\b", re.IGNORECASE
+    ),
+    "storage_gb": re.compile(
+        r"\b(?:stockage|capacit[eé] de stockage|ssd|disque dur)\b",
+        re.IGNORECASE,
+    ),
+    "screen_size_inches": re.compile(
+        r"\b(?:[eé]cran|diagonale)\b", re.IGNORECASE
+    ),
+    "warranty_months": re.compile(
+        r"\b(?:dur[eé]e de garantie|p[eé]riode de garantie|garantie de \d+ mois)\b",
+        re.IGNORECASE,
+    ),
+    "provisional_guarantee": re.compile(
+        r"\b(?:caution|garantie provisoire|garantie de soumission)\b",
+        re.IGNORECASE,
+    ),
+}
+
+
+def _normalise_number_token(value: str) -> Decimal | None:
+    """Parse one numeric value while tolerating common grouping separators."""
+    cleaned = re.sub(r"[\s\u00a0\u202f]", "", value)
+    if not cleaned or not re.fullmatch(r"\d+(?:[,.]\d+)?", cleaned):
+        return None
+
+    if "," in cleaned and "." in cleaned:
+        decimal_separator = "," if cleaned.rfind(",") > cleaned.rfind(".") else "."
+        thousands_separator = "." if decimal_separator == "," else ","
+        cleaned = cleaned.replace(thousands_separator, "")
+        cleaned = cleaned.replace(decimal_separator, ".")
+    elif "," in cleaned or "." in cleaned:
+        separator = "," if "," in cleaned else "."
+        integer_part, fractional_part = cleaned.rsplit(separator, 1)
+        if len(fractional_part) == 3:
+            cleaned = integer_part + fractional_part
+        else:
+            cleaned = integer_part + "." + fractional_part
+
+    try:
+        return Decimal(cleaned)
+    except InvalidOperation:
+        return None
+
+
+def _evidence_value_supported(item: TenderEvidenceItem, quote: str) -> bool:
+    """Check that the extracted scalar value is actually present in its quote."""
+    value = (item.extracted_value or "").strip()
+    if not value:
+        return False
+
+    normalised_value = _normalise_whitespace(value).casefold()
+    normalised_quote = _normalise_whitespace(quote).casefold()
+
+    # If the quote explicitly names a known tender field, do not accept it
+    # as evidence for a different field.
+    labelled_fields = {
+        field_name
+        for field_name, pattern in _EVIDENCE_FIELD_LABELS.items()
+        if pattern.search(normalised_quote)
+    }
+    if labelled_fields and item.field_name in _EVIDENCE_FIELD_LABELS:
+        if item.field_name not in labelled_fields:
+            return False
+
+    if item.field_name == "provisional_guarantee":
+        expected_money = _money_signature(value)
+        quoted_money = _money_signature(quote)
+        if expected_money is not None and quoted_money is not None:
+            return expected_money == quoted_money
+
+    # Numeric values must match a complete numeric token. A plain substring
+    # check would incorrectly accept 16 as evidence for 160, for example.
+    if item.field_name in _NUMERIC_EVIDENCE_FIELDS:
+        number_pattern = r"(?<![\w])\d+(?:[ \u00a0\u202f]\d{3})*(?:[,.]\d+)?(?![\w])"
+        expected_tokens = re.findall(number_pattern, value)
+        quote_tokens = re.findall(number_pattern, quote)
+        if len(expected_tokens) != 1:
+            return False
+        expected_number = _normalise_number_token(expected_tokens[0])
+        if expected_number is None:
+            return False
+        return any(
+            _normalise_number_token(token) == expected_number
+            for token in quote_tokens
+        )
+
+    return normalised_value in normalised_quote
+
+
+def _evidence_matches_scalar(
+    item: TenderEvidenceItem,
+    field_name: str,
+    scalar_value: object,
+) -> bool:
+    """Return whether verified evidence supports the merged scalar value."""
+    if item.field_name != field_name or not item.extracted_value:
+        return False
+
+    evidence_value = item.extracted_value.strip()
+    scalar_text = str(scalar_value).strip()
+
+    # Provisional guarantees are stored as amount strings (for example,
+    # "5 000 MAD"), so compare their amount/currency signature before the
+    # generic numeric-field path.
+    if field_name == "provisional_guarantee":
+        expected_money = _money_signature(scalar_text)
+        actual_money = _money_signature(evidence_value)
+        if expected_money is not None and actual_money is not None:
+            return expected_money == actual_money
+
+    if field_name in _NUMERIC_EVIDENCE_FIELDS:
+        expected = _normalise_number_token(scalar_text)
+        actual = _normalise_number_token(evidence_value)
+        return expected is not None and actual is not None and expected == actual
+
+    if field_name in {"deadline", "contracting_authority"}:
+        return _scalar_values_equivalent(
+            field_name, scalar_value, evidence_value
+        )
+
+    return (
+        _normalise_whitespace(scalar_text).casefold()
+        == _normalise_whitespace(evidence_value).casefold()
+    )
+
+
 def _verify_evidence(
     evidence: list[TenderEvidenceItem],
     document_text: str,
@@ -968,6 +1117,10 @@ def _verify_evidence(
             for number, page_text in page_map.items()
             if quote in page_text
         ]
+
+        if not _evidence_value_supported(item, quote):
+            counts["rejected"] += 1
+            continue
 
         original_page = item.page_number
         if (
@@ -1424,9 +1577,34 @@ async def extract_structured_tender(
         for item in merged.evidence
     }.values())
 
+    # Keep the submitted evidence long enough to identify scalar fields
+    # whose only supporting quotes were rejected. A rejected quote must not
+    # leave its extracted value looking verified in the structured response.
+    submitted_evidence = merged.evidence
     merged.evidence, verification_counts = _verify_evidence(
-        merged.evidence, text
+        submitted_evidence, text
     )
+
+    # Preserve legacy extraction when a field has no evidence entry at all.
+    # When evidence was supplied for a field, however, retain the merged value
+    # only if a verified item supports that exact value.
+    fields_with_evidence = {
+        item.field_name for item in submitted_evidence
+    }
+    for field_name in _STRUCTURED_SCALAR_FIELDS:
+        if field_name not in fields_with_evidence:
+            continue
+
+        scalar_value = getattr(merged.tender, field_name)
+        if scalar_value is None:
+            continue
+
+        if not any(
+            _evidence_matches_scalar(item, field_name, scalar_value)
+            for item in merged.evidence
+        ):
+            setattr(merged.tender, field_name, None)
+
     merged.verified_evidence_count = verification_counts["verified"]
     merged.rejected_evidence_count = verification_counts["rejected"]
     merged.corrected_page_count = verification_counts["corrected"]

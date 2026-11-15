@@ -1304,6 +1304,118 @@ async def test_verify_evidence_corrects_wrong_page_number():
 
 
 @pytest.mark.asyncio
+async def test_verify_evidence_rejects_value_not_present_in_quote():
+    document = "--- Page 1 ---\nQuantité : 10 unités"
+    payload = _payload_with_evidence(
+        {
+            "field_name": "quantity",
+            "extracted_value": "20",
+            "page_number": 1,
+            "source_text": "Quantité : 10 unités",
+        }
+    )
+    payload["tender"]["quantity"] = 20
+
+    result = await _run_structured_extraction(
+        [json.dumps(payload)], ["chunk"], document_text=document
+    )
+
+    assert result.evidence == []
+    assert result.tender.quantity is None
+    assert result.verified_evidence_count == 0
+    assert result.rejected_evidence_count == 1
+
+
+@pytest.mark.asyncio
+async def test_verify_evidence_accepts_numeric_value_with_grouping_spaces():
+    document = "--- Page 1 ---\nBudget estimé : 250 000 MAD"
+    payload = _payload_with_evidence(
+        {
+            "field_name": "estimated_budget",
+            "extracted_value": "250000",
+            "page_number": 1,
+            "source_text": "Budget estimé : 250 000 MAD",
+        }
+    )
+
+    result = await _run_structured_extraction(
+        [json.dumps(payload)], ["chunk"], document_text=document
+    )
+
+    assert len(result.evidence) == 1
+    assert result.tender.estimated_budget == 250000
+    assert result.verified_evidence_count == 1
+    assert result.rejected_evidence_count == 0
+
+
+@pytest.mark.asyncio
+async def test_verify_evidence_rejects_wrong_numeric_value_even_if_quote_exists():
+    document = "--- Page 1 ---\nRAM : 16 Go"
+    payload = _payload_with_evidence(
+        {
+            "field_name": "ram_gb",
+            "extracted_value": "32",
+            "page_number": 1,
+            "source_text": "RAM : 16 Go",
+        }
+    )
+    payload["tender"]["ram_gb"] = 32
+
+    result = await _run_structured_extraction(
+        [json.dumps(payload)], ["chunk"], document_text=document
+    )
+
+    assert result.evidence == []
+    assert result.tender.ram_gb is None
+    assert result.verified_evidence_count == 0
+    assert result.rejected_evidence_count == 1
+
+
+@pytest.mark.asyncio
+async def test_verify_evidence_rejects_quote_labelled_for_another_field():
+    document = "--- Page 1 ---\nQuantité : 16 unités"
+    payload = _payload_with_evidence(
+        {
+            "field_name": "ram_gb",
+            "extracted_value": "16",
+            "page_number": 1,
+            "source_text": "Quantité : 16 unités",
+        }
+    )
+    payload["tender"]["ram_gb"] = 16
+
+    result = await _run_structured_extraction(
+        [json.dumps(payload)], ["chunk"], document_text=document
+    )
+
+    assert result.evidence == []
+    assert result.tender.ram_gb is None
+    assert result.verified_evidence_count == 0
+    assert result.rejected_evidence_count == 1
+
+
+@pytest.mark.asyncio
+async def test_verify_evidence_does_not_match_numeric_substrings():
+    document = "--- Page 1 ---\nRAM : 160 Go"
+    payload = _payload_with_evidence(
+        {
+            "field_name": "ram_gb",
+            "extracted_value": "16",
+            "page_number": 1,
+            "source_text": "RAM : 160 Go",
+        }
+    )
+
+    result = await _run_structured_extraction(
+        [json.dumps(payload)], ["chunk"], document_text=document
+    )
+
+    assert result.evidence == []
+    assert result.verified_evidence_count == 0
+    assert result.rejected_evidence_count == 1
+
+
+@pytest.mark.asyncio
 async def test_verify_evidence_rejects_missing_quote():
     document = "--- Page 1 ---\nBudget estimé : 250 000 MAD"
     payload = _payload_with_evidence(
@@ -2346,3 +2458,24 @@ async def test_extract_structured_tender_propagates_evidence_failure_without_met
             match="Connection failed",
         ):
             await ai_analyzer.extract_structured_tender("text")
+
+def test_evidence_matches_scalar_compares_provisional_guarantee_as_money():
+    from app.schemas.analysis import TenderEvidenceItem
+    from app.services.ai_analyzer import _evidence_matches_scalar
+
+    evidence = TenderEvidenceItem(
+        field_name="provisional_guarantee",
+        extracted_value="5 000 MAD",
+        page_number=1,
+        source_text="Caution provisoire : 5 000 MAD",
+    )
+
+    assert _evidence_matches_scalar(
+        evidence, "provisional_guarantee", "5000 MAD"
+    ) is True
+    assert _evidence_matches_scalar(
+        evidence, "provisional_guarantee", "5 000 EUR"
+    ) is False
+    assert _evidence_matches_scalar(
+        evidence, "provisional_guarantee", "6 000 MAD"
+    ) is False
