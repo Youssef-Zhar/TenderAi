@@ -948,30 +948,30 @@ _NUMERIC_EVIDENCE_FIELDS = {
 
 _EVIDENCE_FIELD_LABELS = {
     "estimated_budget": re.compile(
-        r"\\b(?:budget|montant|valeur|estimation)\\b", re.IGNORECASE
+        r"\b(?:budget|montant|valeur|estimation)\b", re.IGNORECASE
     ),
     "quantity": re.compile(
-        r"\\b(?:quantit[eé]|nombre d['’]?unit[eé]s|unit[eé]s)\\b",
+        r"\b(?:quantit[eé]|nombre d['’]?unit[eé]s|unit[eé]s)\b",
         re.IGNORECASE,
     ),
     "processor": re.compile(
-        r"\\b(?:processeur|processor|cpu)\\b", re.IGNORECASE
+        r"\b(?:processeur|processor|cpu)\b", re.IGNORECASE
     ),
     "ram_gb": re.compile(
-        r"\\b(?:ram|m[eé]moire vive)\\b", re.IGNORECASE
+        r"\b(?:ram|m[eé]moire vive)\b", re.IGNORECASE
     ),
     "storage_gb": re.compile(
-        r"\\b(?:stockage|capacit[eé] de stockage|ssd|disque dur)\\b",
+        r"\b(?:stockage|capacit[eé] de stockage|ssd|disque dur)\b",
         re.IGNORECASE,
     ),
     "screen_size_inches": re.compile(
-        r"\\b(?:[eé]cran|diagonale|pouces)\\b", re.IGNORECASE
+        r"\b(?:[eé]cran|diagonale|pouces)\b", re.IGNORECASE
     ),
     "warranty_months": re.compile(
-        r"\\b(?:garantie|dur[eé]e de garantie)\\b", re.IGNORECASE
+        r"\b(?:garantie|dur[eé]e de garantie)\b", re.IGNORECASE
     ),
     "provisional_guarantee": re.compile(
-        r"\\b(?:caution|garantie provisoire|garantie de soumission)\\b",
+        r"\b(?:caution|garantie provisoire|garantie de soumission)\b",
         re.IGNORECASE,
     ),
 }
@@ -980,8 +980,8 @@ _EVIDENCE_FIELD_LABELS = {
 
 def _normalise_number_token(value: str) -> Decimal | None:
     """Parse one numeric value while tolerating common grouping separators."""
-    cleaned = re.sub(r"[\\s\\u00a0\\u202f]", "", value)
-    if not cleaned or not re.fullmatch(r"\\d+(?:[,.]\\d+)?", cleaned):
+    cleaned = re.sub(r"[\s\u00a0\u202f]", "", value)
+    if not cleaned or not re.fullmatch(r"\d+(?:[,.]\d+)?", cleaned):
         return None
 
     if "," in cleaned and "." in cleaned:
