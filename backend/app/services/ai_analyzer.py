@@ -989,7 +989,7 @@ def _evidence_value_supported(item: TenderEvidenceItem, quote: str) -> bool:
             return expected_money == quoted_money
 
     if item.field_name in _NUMERIC_EVIDENCE_FIELDS:
-        number_pattern = r"(?<![\\w])\\d+(?:[ \\u00a0\\u202f]\\d{3})*(?:[,.]\\d+)?(?![\\w])"
+        number_pattern = r"(?<![\w])\d+(?:[ \u00a0\u202f]\d{3})*(?:[,.]\d+)?(?![\w])"
         expected_tokens = re.findall(number_pattern, value)
         quote_tokens = re.findall(number_pattern, quote)
         if len(expected_tokens) != 1:
