@@ -1038,15 +1038,7 @@ def _verify_evidence(
             if quote in page_text
         ]
 
-        matching_page_numbers = [
-            number
-            for number, page_text in page_map.items()
-            if quote in page_text
-        ]
-        if not any(
-            _evidence_value_supported(item, page_map[number])
-            for number in matching_page_numbers
-        ):
+        if not _evidence_value_supported(item, quote):
             counts["rejected"] += 1
             continue
 
