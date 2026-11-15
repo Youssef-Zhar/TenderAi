@@ -1048,6 +1048,38 @@ def _evidence_value_supported(item: TenderEvidenceItem, quote: str) -> bool:
     return normalised_value in normalised_quote
 
 
+def _evidence_matches_scalar(
+    item: TenderEvidenceItem,
+    field_name: str,
+    scalar_value: object,
+) -> bool:
+    """Return whether verified evidence supports the merged scalar value."""
+    if item.field_name != field_name or not item.extracted_value:
+        return False
+
+    evidence_value = item.extracted_value.strip()
+    scalar_text = str(scalar_value).strip()
+
+    if field_name in _NUMERIC_EVIDENCE_FIELDS:
+        expected = _normalise_number_token(scalar_text)
+        actual = _normalise_number_token(evidence_value)
+        return expected is not None and actual is not None and expected == actual
+
+    if field_name == "provisional_guarantee":
+        expected_money = _money_signature(scalar_text)
+        actual_money = _money_signature(evidence_value)
+        return (
+            expected_money is not None
+            and actual_money is not None
+            and expected_money == actual_money
+        )
+
+    return (
+        _normalise_whitespace(scalar_text).casefold()
+        == _normalise_whitespace(evidence_value).casefold()
+    )
+
+
 def _verify_evidence(
     evidence: list[TenderEvidenceItem],
     document_text: str,
@@ -1540,9 +1572,34 @@ async def extract_structured_tender(
         for item in merged.evidence
     }.values())
 
+    # Keep the submitted evidence long enough to identify scalar fields
+    # whose only supporting quotes were rejected. A rejected quote must not
+    # leave its extracted value looking verified in the structured response.
+    submitted_evidence = merged.evidence
     merged.evidence, verification_counts = _verify_evidence(
-        merged.evidence, text
+        submitted_evidence, text
     )
+
+    # Preserve legacy extraction when a field has no evidence entry at all.
+    # When evidence was supplied for a field, however, retain the merged value
+    # only if a verified item supports that exact value.
+    fields_with_evidence = {
+        item.field_name for item in submitted_evidence
+    }
+    for field_name in _STRUCTURED_SCALAR_FIELDS:
+        if field_name not in fields_with_evidence:
+            continue
+
+        scalar_value = getattr(merged.tender, field_name)
+        if scalar_value is None:
+            continue
+
+        if not any(
+            _evidence_matches_scalar(item, field_name, scalar_value)
+            for item in merged.evidence
+        ):
+            setattr(merged.tender, field_name, None)
+
     merged.verified_evidence_count = verification_counts["verified"]
     merged.rejected_evidence_count = verification_counts["rejected"]
     merged.corrected_page_count = verification_counts["corrected"]
