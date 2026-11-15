@@ -1305,8 +1305,7 @@ async def test_verify_evidence_corrects_wrong_page_number():
 
 @pytest.mark.asyncio
 async def test_verify_evidence_rejects_value_not_present_in_quote():
-    document = "--- Page 1 ---
-Quantité : 10 unités"
+    document = "--- Page 1 ---\nQuantité : 10 unités"
     payload = _payload_with_evidence(
         {
             "field_name": "quantity",
@@ -1327,8 +1326,7 @@ Quantité : 10 unités"
 
 @pytest.mark.asyncio
 async def test_verify_evidence_accepts_numeric_value_with_grouping_spaces():
-    document = "--- Page 1 ---
-Budget estimé : 250 000 MAD"
+    document = "--- Page 1 ---\nBudget estimé : 250 000 MAD"
     payload = _payload_with_evidence(
         {
             "field_name": "estimated_budget",
@@ -1349,30 +1347,7 @@ Budget estimé : 250 000 MAD"
 
 @pytest.mark.asyncio
 async def test_verify_evidence_rejects_wrong_numeric_value_even_if_quote_exists():
-    document = "--- Page 1 ---
-RAM : 16 Go"
-    payload = _payload_with_evidence(
-        {
-            "field_name": "ram_gb",
-            "extracted_value": "32",
-            "page_number": 1,
-            "source_text": "RAM : 16 Go",
-        }
-    )
-
-    result = await _run_structured_extraction(
-        [json.dumps(payload)], ["chunk"], document_text=document
-    )
-
-    assert result.evidence == []
-    assert result.verified_evidence_count == 0
-    assert result.rejected_evidence_count == 1
-
-
-@pytest.mark.asyncio
-async def test_verify_evidence_rejects_wrong_numeric_value_even_if_quote_exists():
-    document = "--- Page 1 ---
-RAM : 16 Go"
+    document = "--- Page 1 ---\nRAM : 16 Go"
     payload = _payload_with_evidence(
         {
             "field_name": "ram_gb",
