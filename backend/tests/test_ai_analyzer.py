@@ -1382,12 +1382,14 @@ async def test_verify_evidence_rejects_quote_labelled_for_another_field():
             "source_text": "Quantité : 16 unités",
         }
     )
+    payload["tender"]["ram_gb"] = 16
 
     result = await _run_structured_extraction(
         [json.dumps(payload)], ["chunk"], document_text=document
     )
 
     assert result.evidence == []
+    assert result.tender.ram_gb is None
     assert result.verified_evidence_count == 0
     assert result.rejected_evidence_count == 1
 
