@@ -2458,3 +2458,24 @@ async def test_extract_structured_tender_propagates_evidence_failure_without_met
             match="Connection failed",
         ):
             await ai_analyzer.extract_structured_tender("text")
+
+def test_evidence_matches_scalar_compares_provisional_guarantee_as_money():
+    from app.schemas.analysis import TenderEvidenceItem
+    from app.services.ai_analyzer import _evidence_matches_scalar
+
+    evidence = TenderEvidenceItem(
+        field_name="provisional_guarantee",
+        extracted_value="5 000 MAD",
+        page_number=1,
+        source_text="Caution provisoire : 5 000 MAD",
+    )
+
+    assert _evidence_matches_scalar(
+        evidence, "provisional_guarantee", "5000 MAD"
+    ) is True
+    assert _evidence_matches_scalar(
+        evidence, "provisional_guarantee", "5 000 EUR"
+    ) is False
+    assert _evidence_matches_scalar(
+        evidence, "provisional_guarantee", "6 000 MAD"
+    ) is False
