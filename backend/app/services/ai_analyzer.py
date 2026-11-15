@@ -1068,10 +1068,12 @@ def _evidence_matches_scalar(
     if field_name == "provisional_guarantee":
         expected_money = _money_signature(scalar_text)
         actual_money = _money_signature(evidence_value)
-        return (
-            expected_money is not None
-            and actual_money is not None
-            and expected_money == actual_money
+        if expected_money is not None and actual_money is not None:
+            return expected_money == actual_money
+
+    if field_name in {"deadline", "contracting_authority"}:
+        return _scalar_values_equivalent(
+            field_name, scalar_value, evidence_value
         )
 
     return (
