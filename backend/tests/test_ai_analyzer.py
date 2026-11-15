@@ -1388,6 +1388,27 @@ async def test_verify_evidence_rejects_quote_labelled_for_another_field():
 
 
 @pytest.mark.asyncio
+async def test_verify_evidence_does_not_match_numeric_substrings():
+    document = "--- Page 1 ---\nRAM : 160 Go"
+    payload = _payload_with_evidence(
+        {
+            "field_name": "ram_gb",
+            "extracted_value": "16",
+            "page_number": 1,
+            "source_text": "RAM : 160 Go",
+        }
+    )
+
+    result = await _run_structured_extraction(
+        [json.dumps(payload)], ["chunk"], document_text=document
+    )
+
+    assert result.evidence == []
+    assert result.verified_evidence_count == 0
+    assert result.rejected_evidence_count == 1
+
+
+@pytest.mark.asyncio
 async def test_verify_evidence_rejects_missing_quote():
     document = "--- Page 1 ---\nBudget estimé : 250 000 MAD"
     payload = _payload_with_evidence(
