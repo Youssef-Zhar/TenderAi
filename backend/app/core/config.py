@@ -77,6 +77,7 @@ def validate_settings() -> None:
         "changeme",
         "secret",
         "password",
+        "replace_with_a_random_secret_of_at_least_32_characters",
     }
 
     if secret.strip().lower() in forbidden_values:
