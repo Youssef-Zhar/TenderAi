@@ -641,3 +641,61 @@ Potential next milestones include OCR integration, stronger extraction coverage 
 ## License
 
 No license file is currently present in the repository. Unless and until a license is added, the project should not be assumed to be released under an open-source license.
+
+---
+
+## Project progress snapshot (16 November 2026)
+
+This section records the implementation state reached during the current development cycle. It distinguishes the code currently on `main` from work that has been tested on an open pull request.
+
+### Implemented backend milestones
+
+- Replaced the initial prototype flow with an OpenRouter-based analysis service using HTTPX.
+- Added chunked, two-pass document analysis: evidence/fact extraction followed by French report synthesis.
+- Added structured Pydantic extraction for tender details, conditions, administrative documents, evaluation criteria, evidence, and extraction conflicts.
+- Added evidence verification against the original extracted PDF text, including rejection of unsupported or mismatched evidence.
+- Added analysis metadata for partial/degraded results, truncation, fallback use, rejected/ambiguous evidence, and extraction conflicts.
+- Added PDF input safeguards: 10 MB upload limit, 200-page limit, 300,000-character extracted-text limit, PDF signature validation, encrypted-PDF rejection, and an explicit OCR-required response for image-only PDFs.
+- Added deadline parsing with a conservative fallback that looks for explicitly labelled submission-deadline lines.
+- Added authenticated tender CRUD, user ownership filtering, database rollback on failed persistence, and pagination.
+- Added account registration/login, Argon2id password hashing, HS256 JWT access tokens, active-user checks, and login/registration rate limits.
+- Added SQLAlchemy models and Alembic migration history for users, tenders, conditions, documents, criteria, evidence, and tender ownership.
+- Added pytest coverage across AI analysis, authentication, security, settings, database sessions, and API routes.
+- Added a GitHub Actions workflow that installs the backend development dependencies and runs the test suite on CI.
+
+### Latest locally reported test results
+
+On 16 November 2026, the developer reported the following local test results from the security-configuration work branch:
+
+- `python -m pytest tests/test_config.py -v` — **29 passed**.
+- `python -m pytest -v` — **349 passed**, 6 deprecation warnings, 0 failures.
+
+These results refer to the tested work branch and should not be interpreted as a fresh test run performed by GitHub or as a test result for every branch. Re-run the suite after pulling or changing code.
+
+### Security configuration work under review
+
+Pull request [#5](https://github.com/Youssef-Zhar/TenderAi/pull/5) is an open draft and has **not** been merged into `main` at the time of this snapshot. It contains:
+
+- Rejection of the default JWT secret placeholder during configuration validation.
+- A regression test for that placeholder.
+- Documentation of the dedicated Alembic migration account variables in `.env.example`.
+
+Do not assume these changes are present in `main` until the pull request is reviewed and merged.
+
+### Findings from the ongoing backend audit
+
+The development audit has identified items to address or explicitly configure before production:
+
+- The current SlowAPI backend uses in-process `memory://` storage. Multiple workers/instances need a shared rate-limit store such as Redis.
+- Client IP handling must be configured carefully behind a trusted reverse proxy.
+- CORS middleware is not configured in the current FastAPI application entry point; a separately hosted browser frontend will need an explicit origin allowlist.
+- The evidence database table stores accepted evidence fields and source quotations, but not a full history of rejected candidates or raw model structured responses.
+- Existing tender records may have a null owner because the ownership migration preserves legacy data; those records need a deliberate ownership/backfill policy.
+- OCR and a production hosting/deployment setup are not implemented in this repository.
+
+### Known PDF test investigation
+
+A 10-page synthetic tender PDF was analysed successfully and saved as a tender record. The response was marked as partial and reported truncation/rejected-evidence/conflict metadata. A database inspection confirmed that the narrative report contained the provisional guarantee amount, while the structured evidence and financial condition records did not contain that amount.
+
+This exposed an important quality-testing case: a fact can appear in the generated narrative while being absent from structured extraction or persisted evidence. The next validation work is to use clean synthetic tender PDFs with a separate ground-truth file and add regression tests for high-value financial fields, especially distinguishing provisional guarantees, definitive guarantees, and retention guarantees.
+
