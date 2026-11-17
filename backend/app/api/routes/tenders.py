@@ -19,12 +19,13 @@ from pathlib import Path
 import logging
 
 import fitz  # PyMuPDF
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query,status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, Query, status
 from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.models.user import User
 
 from app.core.config import settings
+from app.core.rate_limit import get_authenticated_user_key, limiter
 from app.db.session import get_db
 from app.models.tender import Tender
 from app.models.tender_condition import TenderCondition
@@ -255,12 +256,15 @@ def delete_tender(
     status_code=status.HTTP_200_OK,
     summary="Upload a PDF and analyse it with AI",
 )
+@limiter.limit("3/hour", key_func=get_authenticated_user_key)
 async def analyze_pdf(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> AnalyzeResponse:
     """Analyse a PDF and save its structured data to the database."""
+    _ = request  # Required by SlowAPI for request-scoped rate limiting.
 
     # 1. Validate file extension
     if not file.filename or not file.filename.lower().endswith(".pdf"):
