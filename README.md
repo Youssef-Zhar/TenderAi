@@ -235,9 +235,9 @@ TenderAi/
 │   │   ├── services/
 │   │   │   ├── ai_analyzer.py
 │   │   │   └── deadline_parser.py
-│   │   ├── tests/
-│   │   ├── migrations/
-│   │   │   └── versions/
+│   ├── tests/
+│   ├── migrations/
+│   │   └── versions/
 │   │   ├── .env.example
 │   │   ├── alembic.ini
 │   │   ├── pytest.ini
@@ -303,7 +303,7 @@ Edit `backend/.env` with your own database credentials, OpenRouter API key, mode
 
 ### 5. Prepare the database
 
-Create the database and a dedicated application database user in MariaDB/MySQL. Ensure the configured application user has the privileges required by the application.
+Create the database and a dedicated application database user in MariaDB/MySQL. Ensure the configured application user has the privileges required by the application. Configure the separate `DB_MIGRATION_USER` and `DB_MIGRATION_PASSWORD` credentials for Alembic; the migration account must exist in MariaDB/MySQL and have the privileges required to apply schema changes. Adding these variables to `.env.example` does not create the database account.
 
 Apply the Alembic migrations:
 
@@ -340,6 +340,8 @@ The backend reads its settings from `backend/.env` and environment variables. Ne
 | `DB_NAME` | Database name | Yes |
 | `DB_USER` | Application database username | Yes |
 | `DB_PASSWORD` | Application database password | Yes |
+| `DB_MIGRATION_USER` | Dedicated database username used by Alembic migrations | Yes for migrations |
+| `DB_MIGRATION_PASSWORD` | Password for the Alembic migration account | Yes for migrations |
 | `OPENROUTER_API_KEY` | OpenRouter API key | Required for live AI analysis |
 | `OPENROUTER_MODEL` | Model identifier used for analysis | Required when API key is configured |
 | `OPENROUTER_BASE_URL` | OpenRouter API base URL | Optional; defaults to `https://openrouter.ai/api/v1` |
@@ -674,13 +676,13 @@ These results refer to the tested work branch and should not be interpreted as a
 
 ### Security configuration work under review
 
-Pull request [#5](https://github.com/Youssef-Zhar/TenderAi/pull/5) is an open draft and has **not** been merged into `main` at the time of this snapshot. It contains:
+Pull request [#5](https://github.com/Youssef-Zhar/TenderAi/pull/5) was merged into `main` on 17 November 2026. It contains:
 
 - Rejection of the default JWT secret placeholder during configuration validation.
 - A regression test for that placeholder.
 - Documentation of the dedicated Alembic migration account variables in `.env.example`.
 
-Do not assume these changes are present in `main` until the pull request is reviewed and merged.
+These security-configuration changes are now part of `main`.
 
 ### Findings from the ongoing backend audit
 
