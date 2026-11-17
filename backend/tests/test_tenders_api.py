@@ -118,10 +118,12 @@ def client(db_session):
             pass  # db_session est fermée par sa propre fixture
 
     app.dependency_overrides[get_db] = override_get_db
+    limiter.reset()
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
+        limiter.reset()
         app.dependency_overrides.clear()
 
 
