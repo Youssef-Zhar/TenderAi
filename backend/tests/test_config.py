@@ -60,7 +60,17 @@ def test_validate_settings_rejects_invalid_database_port(monkeypatch, port):
         config.validate_settings()
 
 
-@pytest.mark.parametrize("secret", ["", "short", "your_secret_key", "CHANGE_ME", "password"])
+@pytest.mark.parametrize(
+    "secret",
+    [
+        "",
+        "short",
+        "your_secret_key",
+        "CHANGE_ME",
+        "password",
+        "replace_with_a_random_secret_of_at_least_32_characters",
+    ],
+)
 def test_validate_settings_rejects_weak_secret(monkeypatch, secret):
     set_valid_settings(monkeypatch)
     monkeypatch.setattr(config.settings, "secret_key", secret)
