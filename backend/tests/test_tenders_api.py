@@ -39,6 +39,7 @@ from app.schemas.analysis import (
 )
 
 from app.core.security import create_access_token, hash_password
+from app.core.rate_limit import limiter
 from app.models.user import User
 
 # ── Fixture : client avec SQLite temporaire ───────────────────────────────────
@@ -117,10 +118,12 @@ def client(db_session):
             pass  # db_session est fermée par sa propre fixture
 
     app.dependency_overrides[get_db] = override_get_db
+    limiter.reset()
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
+        limiter.reset()
         app.dependency_overrides.clear()
 
 
@@ -1263,3 +1266,35 @@ def test_upload_returns_502_when_ai_returns_error_status(
 
     assert response.status_code == 502
     assert "503" in response.json()["detail"]
+
+
+# ── PDF analysis rate limiting ────────────────────────────────────────────────
+
+def test_analyze_pdf_rate_limit_is_per_authenticated_user(
+    client, auth_headers, second_auth_headers
+):
+    """Limit each authenticated user independently to three analyses/hour."""
+    limiter.reset()
+
+    with (
+        patch(
+            "app.api.routes.tenders.analyze_tender",
+            new=AsyncMock(return_value="Rapport test"),
+        ),
+        patch(
+            "app.api.routes.tenders.extract_structured_tender",
+            new=AsyncMock(return_value=make_structured()),
+        ),
+    ):
+        for _ in range(3):
+            response = call_analyze_pdf(client, auth_headers)
+            assert response.status_code == 200
+
+        blocked_response = call_analyze_pdf(client, auth_headers)
+        assert blocked_response.status_code == 429
+
+        # A different authenticated user has an independent quota.
+        other_user_response = call_analyze_pdf(client, second_auth_headers)
+        assert other_user_response.status_code == 200
+
+    limiter.reset()
