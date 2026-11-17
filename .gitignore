@@ -30,3 +30,14 @@ __pycache__/
 
 # Environment backup files containing possible secrets
 **/.env.backup-*
+
+# Environment backups
+.env.*
+!.env.example
+
+# Backup files
+*.backup
+*.backup-*
+# Local AI provider migration backups
+*.gemini-backup
+*.openrouter-pre-migration
