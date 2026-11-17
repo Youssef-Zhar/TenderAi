@@ -232,18 +232,18 @@ TenderAi/
 │   │   │   ├── analysis.py
 │   │   │   ├── auth.py
 │   │   │   └── tender.py
-│   │   ├── services/
-│   │   │   ├── ai_analyzer.py
-│   │   │   └── deadline_parser.py
+│   │   └── services/
+│   │       ├── ai_analyzer.py
+│   │       └── deadline_parser.py
 │   ├── tests/
 │   ├── migrations/
 │   │   └── versions/
-│   │   ├── .env.example
-│   │   ├── alembic.ini
-│   │   ├── pytest.ini
-│   │   ├── requirements.txt
-│   │   └── requirements-dev.txt
-│   └── implementation_plan.md
+│   ├── .env.example
+│   ├── alembic.ini
+│   ├── pytest.ini
+│   ├── requirements.txt
+│   └── requirements-dev.txt
+├── implementation_plan.md
 └── .gitignore
 ```
 
