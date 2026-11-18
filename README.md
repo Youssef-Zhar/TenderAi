@@ -525,6 +525,7 @@ The current upload endpoint enforces these limits:
 | File extension | Must end in `.pdf` |
 | File signature | Must start with the PDF signature `%PDF-` |
 | Maximum file size | 10 MB |
+| Maximum request body size | 11 MiB for `POST /api/v1/tenders/analyze-pdf` (includes multipart overhead) |
 | Maximum page count | 200 pages |
 | Maximum extracted text | 300,000 characters |
 | Encrypted PDFs | Rejected |
@@ -657,7 +658,7 @@ This section records the implementation state reached during the current develop
 - Added structured Pydantic extraction for tender details, conditions, administrative documents, evaluation criteria, evidence, and extraction conflicts.
 - Added evidence verification against the original extracted PDF text, including rejection of unsupported or mismatched evidence.
 - Added analysis metadata for partial/degraded results, truncation, fallback use, rejected/ambiguous evidence, and extraction conflicts.
-- Added PDF input safeguards: 10 MB upload limit, 200-page limit, 300,000-character extracted-text limit, PDF signature validation, encrypted-PDF rejection, and an explicit OCR-required response for image-only PDFs.
+- Added PDF input safeguards: 10 MB file-level limit, 11 MiB total request-body limit for the PDF-analysis endpoint (enforced by ASGI middleware before multipart parsing), 200-page limit, 300,000-character extracted-text limit, PDF signature validation, encrypted-PDF rejection, and an explicit OCR-required response for image-only PDFs.
 - Added deadline parsing with a conservative fallback that looks for explicitly labelled submission-deadline lines.
 - Added authenticated tender CRUD, user ownership filtering, database rollback on failed persistence, and pagination.
 - Added account registration/login, Argon2id password hashing, HS256 JWT access tokens, active-user checks, and login/registration rate limits.
