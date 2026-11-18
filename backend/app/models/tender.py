@@ -27,6 +27,10 @@ class Tender(Base):
         Text, nullable=False
     )
 
+    analysis_report: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+
     estimated_budget: Mapped[float | None] = mapped_column(
         Float, nullable=True
     )
