@@ -40,3 +40,19 @@ export function getApiErrorMessage(error: unknown): string {
 
   return 'An unexpected error occurred. Please try again.'
 }
+
+api.interceptors.response.use(
+  (response) => response,
+  (error: unknown) => {
+    if (
+      axios.isAxiosError(error) &&
+      error.response?.status === 401 &&
+      !error.config?.url?.includes('/auth/login')
+    ) {
+      sessionStorage.removeItem(TOKEN_STORAGE_KEY)
+      window.dispatchEvent(new Event('tenderai:unauthorized'))
+    }
+
+    return Promise.reject(error)
+  },
+)
