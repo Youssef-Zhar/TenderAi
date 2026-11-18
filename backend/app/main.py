@@ -25,17 +25,18 @@ validate_settings()
 configure_rate_limiting(app)
 
 app.add_middleware(
+    RequestBodySizeLimitMiddleware,
+    max_body_size=MAX_REQUEST_BODY_SIZE,
+    paths={"/api/v1/tenders/analyze-pdf"},
+)
+
+# Keep CORS outermost so browser clients also receive CORS headers on error responses.
+app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
-)
-
-app.add_middleware(
-    RequestBodySizeLimitMiddleware,
-    max_body_size=MAX_REQUEST_BODY_SIZE,
-    paths={"/api/v1/tenders/analyze-pdf"},
 )
 
 
