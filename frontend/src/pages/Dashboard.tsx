@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Activity,
   CalendarClock,
@@ -35,7 +35,7 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
-  async function loadTenders() {
+  const loadTenders = useCallback(async () => {
     setIsLoading(true)
     setError('')
 
@@ -47,11 +47,11 @@ export default function Dashboard() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     void loadTenders()
-  }, [])
+  }, [loadTenders])
 
   const summary = useMemo(() => {
     const knownBudgets = tenders
