@@ -81,7 +81,7 @@ MAX_CHUNK_CHARS = 6_000
 CHUNK_OUTPUT_TOKENS = 2_500
 
 # Pass-2 final report token budget.
-# A 6-section French audit report with contradiction tables: 2 000–4 000 tokens.
+# A complete French audit report with evidence-backed contradiction tables: up to 6 500 tokens.
 FINAL_OUTPUT_TOKENS = 6_500
 
 # Structured JSON extraction token budget.
