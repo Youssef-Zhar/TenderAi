@@ -50,7 +50,9 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
+    // The loader updates UI state after its asynchronous API request completes.
     void loadTenders()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
   }, [loadTenders])
 
   const summary = useMemo(() => {
