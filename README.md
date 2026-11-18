@@ -1,8 +1,8 @@
 # TenderAI
 
-**AI-assisted public procurement (Appel d'Offres) analysis API.**
+**AI-assisted public procurement (Appel d'Offres) analysis platform with a FastAPI backend and React dashboard.**
 
-TenderAI is a Python backend that accepts text-based tender PDFs, extracts their text, asks an LLM to produce a readable analysis and structured procurement data, verifies extracted evidence against the source document, and stores the resulting tender record in MariaDB/MySQL.
+TenderAI is a full-stack prototype for reviewing public procurement documents. Its FastAPI backend accepts text-based tender PDFs, extracts their text, generates a readable analysis and structured procurement data through OpenRouter, verifies extracted evidence against the source document, and stores tender records in MariaDB/MySQL. A React dashboard provides the initial user interface.
 
 > **Project status:** Active development / prototype. TenderAI is an analysis assistant, not an official procurement authority, legal adviser, or substitute for checking the original tender dossier. AI output can be incomplete or incorrect and must always be reviewed against the source PDF.
 
@@ -15,6 +15,7 @@ TenderAI is a Python backend that accepts text-based tender PDFs, extracts their
 - [How analysis works](#how-analysis-works)
 - [Technology stack](#technology-stack)
 - [Architecture](#architecture)
+- [Frontend](#frontend)
 - [Repository structure](#repository-structure)
 - [Requirements](#requirements)
 - [Local setup](#local-setup)
@@ -46,7 +47,7 @@ TenderAI aims to make this information easier to review by:
 6. Saving the tender and its verified related records to the relational database.
 7. Returning the report, structured extraction, processing metadata, and saved tender ID.
 
-The current repository contains the backend API. A user-facing frontend is not included in this repository.
+The repository includes both the backend API and a React frontend. The frontend supports account registration/login, authenticated tender listing and creation/deletion, and PDF analysis through the API.
 
 ## Current capabilities
 
@@ -198,56 +199,100 @@ The current database includes these main entities:
 
 A tender is related to its extracted conditions, documents, criteria, and evidence through `tender_id`. The tender's `owner_id` associates user-created records with their owner; it is nullable in the current schema to accommodate legacy records.
 
+
+## Frontend
+
+The frontend is a React 19 and TypeScript dashboard built with Vite and Tailwind CSS 4.
+
+Current interface includes:
+
+- Dark SaaS dashboard layout with a sidebar and header.
+- Dashboard overview with summary statistics.
+- Recent tender overview.
+- Login/registration with protected routes and sign out.
+- Tender listing, manual tender creation, and deletion.
+- PDF upload with analysis report and structured extraction results.
+- Responsive styling and reusable layout components.
+
+**Current status:** authentication, tender management, and PDF analysis are connected to the FastAPI API. Dashboard statistics and tender lists are based on the authenticated user's saved records. Configure the frontend API URL and the backend CORS allowlist for your local or deployed origins.
+
+### Run the frontend locally
+
+From the repository root:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Vite prints the local development URL in the terminal (usually `http://localhost:5173`).
+
+To check the production build and lint the frontend:
+
+```powershell
+npm run build
+npm run lint
+```
+
+See [`frontend/README.md`](frontend/README.md) for frontend-specific details.
+
 ---
 
 ## Repository structure
 
 ```text
 TenderAi/
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-├── backend/
-│   ├── app/
-│   │   ├── api/
-│   │   │   ├── deps.py
-│   │   │   └── routes/
-│   │   │       ├── auth.py
-│   │   │       └── tenders.py
-│   │   ├── core/
-│   │   │   ├── config.py
-│   │   │   ├── rate_limit.py
-│   │   │   └── security.py
-│   │   ├── db/
-│   │   │   ├── base.py
-│   │   │   └── session.py
-│   │   ├── models/
-│   │   │   ├── tender.py
-│   │   │   ├── tender_condition.py
-│   │   │   ├── tender_criterion.py
-│   │   │   ├── tender_document.py
-│   │   │   ├── tender_evidence.py
-│   │   │   └── user.py
-│   │   ├── schemas/
-│   │   │   ├── analysis.py
-│   │   │   ├── auth.py
-│   │   │   └── tender.py
-│   │   └── services/
-│   │       ├── ai_analyzer.py
-│   │       └── deadline_parser.py
-│   ├── tests/
-│   ├── migrations/
-│   │   └── versions/
-│   ├── .env.example
-│   ├── alembic.ini
-│   ├── pytest.ini
-│   ├── requirements.txt
-│   └── requirements-dev.txt
-├── implementation_plan.md
-└── .gitignore
+|-- .github/
+|   `-- workflows/
+|       `-- ci.yml
+|-- backend/
+|   |-- app/
+|   |   |-- api/
+|   |   |   |-- deps.py
+|   |   |   `-- routes/
+|   |   |       |-- auth.py
+|   |   |       `-- tenders.py
+|   |   |-- core/
+|   |   |-- db/
+|   |   |-- models/
+|   |   |-- schemas/
+|   |   `-- services/
+|   |-- migrations/
+|   |   `-- versions/
+|   |-- tests/
+|   |-- .env.example
+|   |-- alembic.ini
+|   |-- pytest.ini
+|   |-- requirements.txt
+|   `-- requirements-dev.txt
+|-- frontend/
+|   |-- public/
+|   |-- src/
+|   |   |-- assets/
+|   |   |-- components/
+|   |   |-- features/
+|   |   |-- hooks/
+|   |   |-- layouts/
+|   |   |-- lib/
+|   |   |-- pages/
+|   |   |-- services/
+|   |   |-- types/
+|   |   |-- App.tsx
+|   |   |-- index.css
+|   |   `-- main.tsx
+|   |-- .gitignore
+|   |-- eslint.config.js
+|   |-- index.html
+|   |-- package.json
+|   |-- package-lock.json
+|   |-- README.md
+|   |-- tsconfig.json
+|   `-- vite.config.ts
+|-- implementation_plan.md
+|-- README.md
+`-- .gitignore
 ```
-
----
 
 ## Requirements
 
@@ -255,6 +300,7 @@ TenderAi/
 - Python 3.13 recommended (the CI workflow currently uses Python 3.13).
 - MariaDB or MySQL server.
 - An OpenRouter API key and a model available to that key.
+- Node.js and npm for frontend development (use a version supported by the installed Vite release).
 - Git.
 
 The commands below use Windows PowerShell and the repository's current Windows development workflow. Adjust activation commands for your shell if you are using Linux or macOS.
@@ -505,7 +551,7 @@ Current security-related implementation includes:
 
 - The current rate limiter uses in-process memory storage. Its counters are not shared across multiple workers or application instances and reset when the process restarts. Use a shared store such as Redis and review trusted-proxy/client-IP configuration before a multi-worker or multi-instance production deployment.
 - Configure trusted reverse-proxy headers carefully. Do not trust arbitrary forwarded headers from untrusted clients.
-- Configure CORS deliberately if a separate browser frontend is introduced. The current application entry point does not configure CORS middleware.
+- Configure CORS_ORIGINS as a JSON array of exact trusted browser origins. The backend enables CORS middleware without allowing arbitrary origins or cookies.
 - Use HTTPS in deployed environments.
 - Use a strong, unique `SECRET_KEY`; keep it private. Rotating it invalidates existing access tokens.
 - Use separate, least-privilege database accounts for application runtime and schema migrations where appropriate.
@@ -606,10 +652,11 @@ The current CI workflow:
 
 1. Runs on pushes to `main` and `feature/**` branches.
 2. Runs on pull requests targeting `main`.
-3. Uses Ubuntu and Python 3.13.
-4. Installs `backend/requirements-dev.txt`.
-5. Runs `python -m pytest -v` from the backend directory.
-6. Uses CI-only environment values; no production credentials should be stored in the workflow.
+3. Runs backend tests on Ubuntu with Python 3.13.
+4. Installs `backend/requirements-dev.txt` and runs `python -m pytest -v`.
+5. Runs frontend checks on Ubuntu with Node.js 24.
+6. Installs frontend dependencies with `npm ci`, then runs `npm run lint` and `npm run build`.
+7. Uses CI-only environment values; no production credentials should be stored in the workflow.
 
 ---
 
@@ -623,7 +670,7 @@ The following are known development areas, not claims of already implemented fun
 - **Conflict handling:** conflicting values are recorded for review; the system does not automatically resolve every contradiction in a tender dossier.
 - **Rate-limit storage:** replace in-memory storage with shared storage for multi-worker/production deployments.
 - **Proxy configuration:** define trusted proxy behavior before deployment behind a reverse proxy.
-- **Frontend:** no frontend application is currently included.
+- **Frontend scope:** the React application currently includes authentication, dashboard data, tender listing/creation/deletion, and PDF analysis. Editing tender records and richer reporting remain future work.
 - **Production deployment:** no production hosting configuration is defined in this repository.
 - **API shape:** tender detail responses currently expose the main tender record; related conditions, documents, criteria, and evidence are saved in separate tables and are not yet presented through a dedicated expanded-detail endpoint.
 - **Observability:** production-grade structured logging, metrics, and monitoring need further work.
@@ -664,7 +711,7 @@ This section records the implementation state reached during the current develop
 - Added account registration/login, Argon2id password hashing, HS256 JWT access tokens, active-user checks, and login/registration rate limits.
 - Added SQLAlchemy models and Alembic migration history for users, tenders, conditions, documents, criteria, evidence, and tender ownership.
 - Added pytest coverage across AI analysis, authentication, security, settings, database sessions, and API routes.
-- Added a GitHub Actions workflow that installs the backend development dependencies and runs the test suite on CI.
+- Added GitHub Actions checks for the backend pytest suite and frontend ESLint/production build.
 
 ### Latest locally reported test results
 
@@ -691,7 +738,7 @@ The development audit has identified items to address or explicitly configure be
 
 - The current SlowAPI backend uses in-process `memory://` storage. Multiple workers/instances need a shared rate-limit store such as Redis.
 - Client IP handling must be configured carefully behind a trusted reverse proxy.
-- CORS middleware is not configured in the current FastAPI application entry point; a separately hosted browser frontend will need an explicit origin allowlist.
+- CORS is configured through CORS_ORIGINS; update this allowlist when the frontend is hosted on a different origin.
 - The evidence database table stores accepted evidence fields and source quotations, but not a full history of rejected candidates or raw model structured responses.
 - Existing tender records may have a null owner because the ownership migration preserves legacy data; those records need a deliberate ownership/backfill policy.
 - OCR and a production hosting/deployment setup are not implemented in this repository.

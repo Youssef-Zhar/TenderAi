@@ -20,3 +20,4 @@ class TenderResponse(TenderInput):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    analysis_report: str | None = None

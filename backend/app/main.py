@@ -1,5 +1,6 @@
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -8,7 +9,7 @@ from app.core.rate_limit import configure_rate_limiting
 from app.core.request_size_limit import RequestBodySizeLimitMiddleware
 from app.api.routes.auth import router as auth_router
 from app.api.routes.tenders import router as tenders_router
-from app.core.config import validate_settings
+from app.core.config import settings, validate_settings
 from app.db.session import engine
 
 
@@ -27,6 +28,15 @@ app.add_middleware(
     RequestBodySizeLimitMiddleware,
     max_body_size=MAX_REQUEST_BODY_SIZE,
     paths={"/api/v1/tenders/analyze-pdf"},
+)
+
+# Keep CORS outermost so browser clients also receive CORS headers on error responses.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
