@@ -1,10 +1,18 @@
 import {
+  BrainCircuit,
+  FileText,
   LayoutDashboard,
-  ShieldCheck,
   LogOut,
+  ShieldCheck,
 } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+
+const navigation = [
+  { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
+  { label: 'Tenders', icon: FileText, href: '/tenders' },
+  { label: 'AI Analysis', icon: BrainCircuit, href: '/analysis' },
+]
 
 export default function Sidebar() {
   const { user, logout } = useAuth()
@@ -29,23 +37,29 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 px-4 py-7">
+      <nav className="flex-1 space-y-2 px-4 py-7">
         <p className="mb-4 px-3 text-[10px] font-bold tracking-[0.15em] text-muted">
           WORKSPACE
         </p>
-        <NavLink
-          to="/dashboard"
-          className={({ isActive }) =>
-            `flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition ${
-              isActive
-                ? 'bg-primary/15 text-primary'
-                : 'text-muted hover:bg-surface-hover hover:text-white'
-            }`
-          }
-        >
-          <LayoutDashboard size={19} />
-          <span>Dashboard</span>
-        </NavLink>
+        {navigation.map((item) => {
+          const Icon = item.icon
+          return (
+            <NavLink
+              key={item.href}
+              to={item.href}
+              className={({ isActive }) =>
+                `flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition ${
+                  isActive
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-muted hover:bg-surface-hover hover:text-white'
+                }`
+              }
+            >
+              <Icon size={19} />
+              <span>{item.label}</span>
+            </NavLink>
+          )
+        })}
       </nav>
 
       <div className="border-t border-border p-4">
