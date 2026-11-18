@@ -35,13 +35,11 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
-  const loadTenders = useCallback(async () => {
-    setIsLoading(true)
-    setError('')
-
+  const fetchTenders = useCallback(async () => {
     try {
       const records = await tenderService.list(0, 20)
       setTenders(records)
+      setError('')
     } catch (loadError) {
       setError(getApiErrorMessage(loadError))
     } finally {
@@ -49,11 +47,15 @@ export default function Dashboard() {
     }
   }, [])
 
+  const loadTenders = useCallback(async () => {
+    setIsLoading(true)
+    await fetchTenders()
+  }, [fetchTenders])
+
   useEffect(() => {
-    // The loader updates UI state after its asynchronous API request completes.
-    void loadTenders()
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-  }, [loadTenders])
+    // fetchTenders updates state only after the API request settles.
+    void fetchTenders()
+  }, [fetchTenders])
 
   const summary = useMemo(() => {
     const knownBudgets = tenders
