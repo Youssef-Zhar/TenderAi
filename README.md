@@ -650,12 +650,11 @@ The current CI workflow:
 
 1. Runs on pushes to `main` and `feature/**` branches.
 2. Runs on pull requests targeting `main`.
-3. Uses Ubuntu and Python 3.13.
-4. Installs `backend/requirements-dev.txt`.
-5. Runs `python -m pytest -v` from the backend directory.
-6. Uses CI-only environment values; no production credentials should be stored in the workflow.
- 
-The current workflow tests the backend only; frontend build and lint checks are not yet included.
+3. Runs backend tests on Ubuntu with Python 3.13.
+4. Installs `backend/requirements-dev.txt` and runs `python -m pytest -v`.
+5. Runs frontend checks on Ubuntu with Node.js 24.
+6. Installs frontend dependencies with `npm ci`, then runs `npm run lint` and `npm run build`.
+7. Uses CI-only environment values; no production credentials should be stored in the workflow.
 
 ---
 
@@ -710,7 +709,7 @@ This section records the implementation state reached during the current develop
 - Added account registration/login, Argon2id password hashing, HS256 JWT access tokens, active-user checks, and login/registration rate limits.
 - Added SQLAlchemy models and Alembic migration history for users, tenders, conditions, documents, criteria, evidence, and tender ownership.
 - Added pytest coverage across AI analysis, authentication, security, settings, database sessions, and API routes.
-- Added a GitHub Actions workflow that installs the backend development dependencies and runs the test suite on CI.
+- Added GitHub Actions checks for the backend pytest suite and frontend ESLint/production build.
 
 ### Latest locally reported test results
 
