@@ -528,6 +528,25 @@ def test_analyze_pdf_rejects_oversized_file(client , auth_headers):
     response = call_analyze_pdf(client, auth_headers, pdf_bytes=big_content, file_name="big.pdf")
     assert response.status_code == 413
 
+def test_analyze_pdf_rejects_oversized_request_body(client, auth_headers):
+    """A request body exceeding 11 MiB must be rejected by middleware."""
+    oversized_content = b"x" * (11 * 1024 * 1024 + 1)
+
+    response = client.post(
+        "/api/v1/tenders/analyze-pdf",
+        files={
+            "file": (
+                "large.pdf",
+                oversized_content,
+                "application/pdf",
+            )
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 413
+    assert "11 MiB" in response.json()["detail"]
+
 def test_analyze_pdf_rejects_too_many_pages(client, auth_headers):
     """Un PDF dépassant 200 pages doit être rejeté avant l'analyse IA."""
     pdf_bytes = make_pdf_pages(201)
