@@ -31,17 +31,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    const handleUnauthorized = () => logout()
+    window.addEventListener('tenderai:unauthorized', handleUnauthorized)
+
     const token = sessionStorage.getItem(TOKEN_STORAGE_KEY)
 
     if (!token) {
       setIsLoading(false)
-      return
+      return () => window.removeEventListener('tenderai:unauthorized', handleUnauthorized)
     }
 
     authService.me()
       .then(setUser)
       .catch(logout)
       .finally(() => setIsLoading(false))
+
+    return () => window.removeEventListener('tenderai:unauthorized', handleUnauthorized)
   }, [logout])
 
   const login = useCallback(async (credentials: AuthCredentials) => {
