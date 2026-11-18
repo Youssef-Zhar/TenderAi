@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_model: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # Browser frontend origins allowed to call the API.
+    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     # Authentication / JWT
     secret_key: str = ""
     jwt_algorithm: str = "HS256"
