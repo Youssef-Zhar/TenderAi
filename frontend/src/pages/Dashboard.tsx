@@ -53,7 +53,8 @@ export default function Dashboard() {
   }, [fetchTenders])
 
   useEffect(() => {
-    // fetchTenders updates state only after the API request settles.
+    // This effect starts an external request; state updates happen when it settles.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchTenders()
   }, [fetchTenders])
 
