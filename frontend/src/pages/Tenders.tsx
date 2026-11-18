@@ -8,37 +8,102 @@ function renderMarkdown(source: string): string {
     value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 
+  const formatMath = (value: string) => {
+    const readable = value
+      .replace(/\\\\,/g, ' ')
+      .replace(/\\[,;!]/g, ' ')
+      .replace(/\\quad/g, '  ')
+      .replace(/\\times/g, '×')
+      .replace(/\\cdot/g, '·')
+      .replace(/\\%/g, '%')
+      .replace(/\\text\s*\{([^{}]*)\}/g, '$1')
+      .replace(/\\mathrm\s*\{([^{}]*)\}/g, '$1')
+      .replace(/\\left|\\right/g, '')
+      .replace(/[{}]/g, '')
+      .replace(/\\/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    return '<span class="inline-block rounded bg-surface px-2 py-0.5 font-mono text-primary">' +
+      escapeHtml(readable) + '</span>'
+  }
+
+  const inline = (value: string) => {
+    const mathParts: string[] = []
+    const withMath = value.replace(/\$\$([\s\S]+?)\$\$|\$([^$\n]+)\$/g, (_match, display: string | undefined, inlineMath: string | undefined) => {
+      const token = '\u0000MATH' + mathParts.length + '\u0000'
+      mathParts.push(formatMath(display ?? inlineMath ?? ''))
+      return token
+    })
+    return escapeHtml(withMath)
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/\u0000MATH(\d+)\u0000/g, (_match, index: string) => mathParts[Number(index)] ?? '')
+  }
+
   const normalized = source
     .replace(/\\([*_~])/g, '$1')
-    .replace(/\s{2,}(?=---|#{1,6}\s|[*]\s|[-+]\s)/g, '\n')
-    .replace(/\s*---\s*/g, '\n---\n')
-    .replace(/\s+(?=#{1,6}\s)/g, '\n')
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
 
-  const inline = (value: string) => escapeHtml(value)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+  const lines = normalized.split('\n')
+  const isTableSeparator = (line: string) =>
+    /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)
+  const cells = (line: string) =>
+    line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim())
+  const output: string[] = []
 
-  return normalized.split(/\r?\n/).map((rawLine) => {
-    const line = rawLine.trim()
-    if (!line) return ''
-    if (/^---+$/.test(line)) return '<hr class="my-4 border-border" />'
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim()
+    if (!line) continue
+
+    if (line.includes('|') && index + 1 < lines.length && isTableSeparator(lines[index + 1])) {
+      const headers = cells(line)
+      const rows: string[][] = []
+      index += 2
+      while (index < lines.length && lines[index].includes('|') && lines[index].trim()) {
+        rows.push(cells(lines[index]))
+        index += 1
+      }
+      index -= 1
+      output.push(
+        '<div class="my-4 overflow-x-auto rounded-lg border border-border"><table class="w-full border-collapse text-left text-sm">' +
+        '<thead class="bg-surface"><tr>' + headers.map((cell) =>
+          '<th class="border-b border-border px-3 py-2 font-semibold text-white">' + inline(cell) + '</th>'
+        ).join('') + '</tr></thead><tbody>' +
+        rows.map((row) => '<tr>' + headers.map((_header, cellIndex) =>
+          '<td class="border-b border-border/60 px-3 py-2 align-top">' + inline(row[cellIndex] ?? '') + '</td>'
+        ).join('') + '</tr>').join('') +
+        '</tbody></table></div>'
+      )
+      continue
+    }
+
+    if (/^---+$/.test(line)) {
+      output.push('<hr class="my-4 border-border" />')
+      continue
+    }
     const heading = line.match(/^(#{1,6})\s+(.+)$/)
     if (heading) {
       const tag = heading[1].length <= 2 ? 'h3' : 'h4'
-      return '<' + tag + ' class="mb-2 mt-4 font-semibold text-white">' +
-        inline(heading[2]) + '</' + tag + '>'
+      output.push('<' + tag + ' class="mb-2 mt-4 font-semibold text-white">' +
+        inline(heading[2]) + '</' + tag + '>')
+      continue
     }
     if (/^[-*+]\s+/.test(line)) {
-      return '<div class="my-1 flex gap-2 pl-2"><span aria-hidden="true">•</span><span>' +
-        inline(line.replace(/^[-*+]\s+/, '')) + '</span></div>'
+      output.push('<div class="my-1 flex gap-2 pl-2"><span aria-hidden="true">•</span><span>' +
+        inline(line.replace(/^[-*+]\s+/, '')) + '</span></div>')
+      continue
     }
     if (/^\*.+\*$/.test(line)) {
-      return '<p class="my-2 italic text-muted">' + inline(line.replace(/^\*|\*$/g, '')) + '</p>'
+      output.push('<p class="my-2 italic text-muted">' + inline(line.replace(/^\*|\*$/g, '')) + '</p>')
+      continue
     }
-    return '<p class="my-2 leading-7">' + inline(line) + '</p>'
-  }).join('')
-}
+    output.push('<p class="my-2 leading-7">' + inline(line) + '</p>')
+  }
 
+  return output.join('')
+}
 export default function Tenders() {
   const [tenders, setTenders] = useState<Tender[]>([])
   const [title, setTitle] = useState('')
