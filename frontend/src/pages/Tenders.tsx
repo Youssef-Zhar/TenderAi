@@ -181,7 +181,17 @@ export default function Tenders() {
               <article key={tender.id} className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
                 <div className="min-w-0 flex-1">
                   <h3 className="font-medium text-white">{tender.title}</h3>
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-muted">{tender.description}</p>
+                  <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-muted">{tender.description}</p>
+                  {tender.description.length > 180 && (
+                    <details className="mt-2 text-xs">
+                      <summary className="w-fit cursor-pointer text-primary hover:text-primary-hover">
+                        View full description
+                      </summary>
+                      <p className="mt-3 max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-background/50 p-4 text-sm text-muted">
+                        {tender.description}
+                      </p>
+                    </details>
+                  )}
                   <p className="mt-2 text-xs text-muted">
                     Record #{tender.id}
                     {tender.estimated_budget !== null ? ` · Budget: ${tender.estimated_budget}` : ''}
