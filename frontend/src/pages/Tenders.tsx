@@ -182,14 +182,14 @@ export default function Tenders() {
                 <div className="min-w-0 flex-1">
                   <h3 className="font-medium text-white">{tender.title}</h3>
                   <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-sm text-muted">{tender.description}</p>
-                  {tender.description.length > 180 && (
+                  {(tender.analysis_report || tender.description.length > 180) && (
                     <details className="mt-2 text-xs">
                       <summary className="w-fit cursor-pointer text-primary hover:text-primary-hover">
-                        View full description
+                        {tender.analysis_report ? 'View full AI analysis report' : 'View full description'}
                       </summary>
-                      <p className="mt-3 max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-background/50 p-4 text-sm text-muted">
-                        {tender.description}
-                      </p>
+                      <div className="mt-3 max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-background/50 p-4 text-sm text-muted">
+                        {tender.analysis_report || tender.description}
+                      </div>
                     </details>
                   )}
                   <p className="mt-2 text-xs text-muted">
