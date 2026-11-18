@@ -30,14 +30,14 @@ function renderMarkdown(source: string): string {
   const inline = (value: string) => {
     const mathParts: string[] = []
     const withMath = value.replace(/\$\$([\s\S]+?)\$\$|\$([^$\n]+)\$/g, (_match, display: string | undefined, inlineMath: string | undefined) => {
-      const token = '\u0000MATH' + mathParts.length + '\u0000'
+      const token = 'MATHPLACEHOLDER' + mathParts.length + 'END'
       mathParts.push(formatMath(display ?? inlineMath ?? ''))
       return token
     })
     return escapeHtml(withMath)
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/\u0000MATH(\d+)\u0000/g, (_match, index: string) => mathParts[Number(index)] ?? '')
+      .replace(/MATHPLACEHOLDER(\d+)END/g, (_match, index: string) => mathParts[Number(index)] ?? '')
   }
 
   const normalized = source
