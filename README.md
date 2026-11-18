@@ -47,7 +47,7 @@ TenderAI aims to make this information easier to review by:
 6. Saving the tender and its verified related records to the relational database.
 7. Returning the report, structured extraction, processing metadata, and saved tender ID.
 
-The repository includes both the backend API and a React-based frontend dashboard. The dashboard currently uses mock data; live backend integration and frontend authentication have not been implemented yet.
+The repository includes both the backend API and a React frontend. The frontend supports account registration/login, authenticated tender listing and creation/deletion, and PDF analysis through the API.
 
 ## Current capabilities
 
@@ -212,7 +212,7 @@ Current interface includes:
 - Quick actions and an upcoming-deadline panel.
 - Responsive styling and reusable layout components.
 
-**Current status:** dashboard content is mock data. API integration, live tender records, and authentication are not implemented yet. The FastAPI application also does not currently configure CORS; an explicit origin allowlist is required before browser-based API integration.
+**Current status:** authentication, tender management, and PDF analysis are connected to the FastAPI API. Dashboard statistics and tender lists are based on the authenticated user's saved records. Configure the frontend API URL and the backend CORS allowlist for your local or deployed origins.
 
 ### Run the frontend locally
 
@@ -549,7 +549,7 @@ Current security-related implementation includes:
 
 - The current rate limiter uses in-process memory storage. Its counters are not shared across multiple workers or application instances and reset when the process restarts. Use a shared store such as Redis and review trusted-proxy/client-IP configuration before a multi-worker or multi-instance production deployment.
 - Configure trusted reverse-proxy headers carefully. Do not trust arbitrary forwarded headers from untrusted clients.
-- Configure CORS with an explicit allowlist before connecting the browser frontend to the API. The current application entry point does not configure CORS middleware.
+- Configure CORS_ORIGINS as a JSON array of exact trusted browser origins. The backend enables CORS middleware without allowing arbitrary origins or cookies.
 - Use HTTPS in deployed environments.
 - Use a strong, unique `SECRET_KEY`; keep it private. Rotating it invalidates existing access tokens.
 - Use separate, least-privilege database accounts for application runtime and schema migrations where appropriate.
@@ -669,7 +669,7 @@ The following are known development areas, not claims of already implemented fun
 - **Conflict handling:** conflicting values are recorded for review; the system does not automatically resolve every contradiction in a tender dossier.
 - **Rate-limit storage:** replace in-memory storage with shared storage for multi-worker/production deployments.
 - **Proxy configuration:** define trusted proxy behavior before deployment behind a reverse proxy.
-- **Frontend integration:** the initial React dashboard is present, but it still uses mock data and does not yet include API integration or authentication.
+- **Frontend scope:** the React application currently includes authentication, dashboard data, tender listing/creation/deletion, and PDF analysis. Editing tender records and richer reporting remain future work.
 - **Production deployment:** no production hosting configuration is defined in this repository.
 - **API shape:** tender detail responses currently expose the main tender record; related conditions, documents, criteria, and evidence are saved in separate tables and are not yet presented through a dedicated expanded-detail endpoint.
 - **Observability:** production-grade structured logging, metrics, and monitoring need further work.
@@ -737,7 +737,7 @@ The development audit has identified items to address or explicitly configure be
 
 - The current SlowAPI backend uses in-process `memory://` storage. Multiple workers/instances need a shared rate-limit store such as Redis.
 - Client IP handling must be configured carefully behind a trusted reverse proxy.
-- CORS middleware is not configured in the current FastAPI application entry point; a separately hosted browser frontend will need an explicit origin allowlist.
+- CORS is configured through CORS_ORIGINS; update this allowlist when the frontend is hosted on a different origin.
 - The evidence database table stores accepted evidence fields and source quotations, but not a full history of rejected candidates or raw model structured responses.
 - Existing tender records may have a null owner because the ownership migration preserves legacy data; those records need a deliberate ownership/backfill policy.
 - OCR and a production hosting/deployment setup are not implemented in this repository.
