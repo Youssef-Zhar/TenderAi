@@ -4,6 +4,7 @@ export interface Tender {
   id: number
   title: string
   description: string
+  analysis_report?: string | null
   estimated_budget: number | null
   deadline: string | null
 }
