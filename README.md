@@ -287,7 +287,6 @@ TenderAi/
 |   |-- README.md
 |   |-- tsconfig.json
 |   `-- vite.config.ts
-|-- backups/
 |-- implementation_plan.md
 |-- README.md
 `-- .gitignore
@@ -299,6 +298,7 @@ TenderAi/
 - Python 3.13 recommended (the CI workflow currently uses Python 3.13).
 - MariaDB or MySQL server.
 - An OpenRouter API key and a model available to that key.
+- Node.js and npm for frontend development (use a version supported by the installed Vite release).
 - Git.
 
 The commands below use Windows PowerShell and the repository's current Windows development workflow. Adjust activation commands for your shell if you are using Linux or macOS.
@@ -654,6 +654,8 @@ The current CI workflow:
 4. Installs `backend/requirements-dev.txt`.
 5. Runs `python -m pytest -v` from the backend directory.
 6. Uses CI-only environment values; no production credentials should be stored in the workflow.
+ 
+The current workflow tests the backend only; frontend build and lint checks are not yet included.
 
 ---
 
