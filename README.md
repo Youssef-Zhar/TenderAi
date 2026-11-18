@@ -209,7 +209,9 @@ Current interface includes:
 - Dark SaaS dashboard layout with a sidebar and header.
 - Dashboard overview with summary statistics.
 - Recent tender overview.
-- Quick actions and an upcoming-deadline panel.
+- Login/registration with protected routes and sign out.
+- Tender listing, manual tender creation, and deletion.
+- PDF upload with analysis report and structured extraction results.
 - Responsive styling and reusable layout components.
 
 **Current status:** authentication, tender management, and PDF analysis are connected to the FastAPI API. Dashboard statistics and tender lists are based on the authenticated user's saved records. Configure the frontend API URL and the backend CORS allowlist for your local or deployed origins.
