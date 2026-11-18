@@ -1,75 +1,77 @@
-# React + TypeScript + Vite
+# TenderAI - Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The TenderAI frontend is a React dashboard for the public procurement analysis platform. It is built with React 19, TypeScript, Vite, and Tailwind CSS 4.
 
-Currently, two official plugins are available:
+## Current status
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The initial dashboard interface is implemented. It currently displays mock data and is not yet connected to the FastAPI backend. API integration, authentication, and live tender data are planned work.
 
-## React Compiler
+## Current interface
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Dark SaaS dashboard layout.
+- Sidebar navigation and application header.
+- Dashboard summary statistics.
+- Recent tenders overview.
+- Quick actions and upcoming deadline panel.
+- Responsive styling.
 
-## Expanding the ESLint configuration
+## Tech stack
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+| Technology | Purpose |
+|---|---|
+| React 19 | UI components |
+| TypeScript | Static typing |
+| Vite | Development server and build tooling |
+| Tailwind CSS 4 | Styling |
+| React Router | Client-side routing |
+| Axios | HTTP client for planned API integration |
+| TanStack Query | Server-state management for planned API integration |
+| Lucide React | Icons |
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Getting started
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+Use Node.js and npm, then run these commands from the `frontend/` directory:
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+Vite prints the local development URL in the terminal (usually `http://localhost:5173`).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Available scripts
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+| Command | Description |
+|---|---|
+| `npm run dev` | Start the Vite development server |
+| `npm run build` | Run TypeScript checks and create a production build |
+| `npm run lint` | Run ESLint |
+| `npm run preview` | Preview the production build locally |
 
+## Project structure
+
+```text
+src/
+|-- assets/
+|-- components/
+|   |-- shared/
+|   `-- ui/
+|-- features/
+|   |-- auth/
+|   `-- dashboard/
+|-- hooks/
+|-- layouts/
+|-- lib/
+|-- pages/
+|-- services/
+|-- types/
+|-- App.tsx
+|-- index.css
+`-- main.tsx
 ```
+
+## Backend integration
+
+The backend API is a FastAPI application in the repository's `backend/` directory. Browser-based integration will require the backend to configure CORS with an explicit allowlist for the frontend origin. No live API integration or frontend authentication is implemented yet.
+
+For backend setup and API details, see the [root README](../README.md).
