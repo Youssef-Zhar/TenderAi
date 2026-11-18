@@ -37,7 +37,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = sessionStorage.getItem(TOKEN_STORAGE_KEY)
 
     if (!token) {
-      setIsLoading(false)
+      // This is the initial auth bootstrap state; defer the update until after the effect.
+      queueMicrotask(() => setIsLoading(false))
       return () => window.removeEventListener('tenderai:unauthorized', handleUnauthorized)
     }
 
@@ -79,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
+// The hook is intentionally exported for consumers in the app.
 export function useAuth(): AuthContextValue {
   const context = useContext(AuthContext)
 
