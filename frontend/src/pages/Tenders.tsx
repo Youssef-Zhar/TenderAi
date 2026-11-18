@@ -3,6 +3,40 @@ import { FilePlus2, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react'
 import { getApiErrorMessage } from '../lib/api'
 import { tenderService, type Tender } from '../services/tenders'
 
+function renderMarkdown(source: string): string {
+  const escapeHtml = (value: string) =>
+    value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+
+  const normalized = source
+    .replace(/\\\\([*_~`])/g, '$1')
+    .replace(/\\s{2,}(?=---|#{1,6}\\s|\\*\\s|[-+]\\s)/g, '\\n')
+    .replace(/\\s*---\\s*/g, '\\n---\\n')
+    .replace(/\\s+(?=#{1,6}\\s)/g, '\\n')
+
+  const inline = (value: string) => escapeHtml(value)
+    .replace(/`([^`]+)`/g, '<code class="rounded bg-slate-800 px-1 py-0.5 text-primary">$1</code>')
+    .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
+    .replace(/\\*(.+?)\\*/g, '<em>$1</em>')
+
+  return normalized.split(/\\r?\\n/).map((rawLine) => {
+    const line = rawLine.trim()
+    if (!line) return ''
+    if (/^---+$/.test(line)) return '<hr class="my-4 border-border" />'
+    const heading = line.match(/^(#{1,6})\\s+(.+)$/)
+    if (heading) {
+      const level = heading[1].length
+      const tag = level <= 2 ? 'h3' : 'h4'
+      return `<${tag} class="mb-2 mt-4 font-semibold text-white">${inline(heading[2])}</${tag}>`
+    }
+    if (/^[-*+]\\s+/.test(line)) {
+      return `<div class="my-1 flex gap-2 pl-2"><span aria-hidden="true">•</span><span>${inline(line.replace(/^[-*+]\\s+/, ''))}</span></div>`
+    }
+    if (/^\\*.+\\*$/.test(line)) return `<p class="my-2 italic text-muted">${inline(line.replace(/^\\*|\\*$/g, ''))}</p>`
+    return `<p class="my-2 leading-7">${inline(line)}</p>`
+  }).join('')
+}
+
 export default function Tenders() {
   const [tenders, setTenders] = useState<Tender[]>([])
   const [title, setTitle] = useState('')
@@ -187,9 +221,10 @@ export default function Tenders() {
                       <summary className="w-fit cursor-pointer text-primary hover:text-primary-hover">
                         {tender.analysis_report ? 'View full AI analysis report' : 'View full description'}
                       </summary>
-                      <div className="mt-3 max-h-96 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-background/50 p-4 text-sm text-muted">
-                        {tender.analysis_report || tender.description}
-                      </div>
+                      <div
+                        className="mt-3 max-h-[32rem] overflow-y-auto break-words rounded-lg border border-border bg-background/50 p-4 text-sm text-muted"
+                        dangerouslySetInnerHTML={{ __html: renderMarkdown(tender.analysis_report || tender.description) }}
+                      />
                     </details>
                   )}
                   <p className="mt-2 text-xs text-muted">
