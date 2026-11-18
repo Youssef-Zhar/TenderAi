@@ -421,10 +421,20 @@ async def analyze_pdf(
         structured.tender.title or Path(file.filename).stem
     )[:200]
 
+    summary_parts = ["Dossier de marché analysé par TenderAI."]
+    if structured.tender.reference:
+        summary_parts.append(f"Référence : {structured.tender.reference}.")
+    if structured.tender.contracting_authority:
+        summary_parts.append(
+            f"Autorité contractante : {structured.tender.contracting_authority}."
+        )
+    tender_summary = " ".join(summary_parts)
+
     tender = Tender(
         owner_id=current_user.id,
         title=title,
-        description=report,
+        description=tender_summary,
+        analysis_report=report,
         estimated_budget=structured.tender.estimated_budget,
         deadline=parsed_deadline,
     )
