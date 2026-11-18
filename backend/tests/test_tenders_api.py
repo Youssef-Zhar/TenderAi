@@ -294,6 +294,8 @@ def test_analyze_pdf_saves_tender(client, db_session, test_user, auth_headers):
     assert tender is not None
     assert tender.owner_id == test_user.id
     assert tender.title == "Appel d'offres de test"
+    assert tender.description.startswith("Dossier de marché analysé par TenderAI.")
+    assert tender.analysis_report == "Rapport test"
     assert tender.estimated_budget == 250000.0
 
 
