@@ -86,6 +86,7 @@ class AnalysisMetadata(BaseModel):
     ambiguous_evidence_count: int = 0
     extraction_conflict_count: int = 0
     degradation_reasons: list[str] = Field(default_factory=list)
+    pages_without_text: list[int] = Field(default_factory=list)
 
 
 class AnalysisResult(BaseModel):

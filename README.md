@@ -578,7 +578,7 @@ The current upload endpoint enforces these limits:
 | Corrupted/unreadable PDFs | Rejected |
 | Selectable text | Required for AI analysis |
 
-**OCR is not implemented yet.** If a PDF contains no selectable text, the API returns an `ocr_required` analysis status and indicates that OCR processing is required but unsupported. Scanned/image-only documents therefore need OCR before they can be analysed.
+**OCR is not implemented yet.** If a PDF contains no selectable text, the API returns an `ocr_required` analysis status and indicates that OCR processing is required but unsupported. For mixed PDFs, pages without selectable text are listed in `analysis.metadata.pages_without_text` and the result is marked `analysis_partial`; those page contents are excluded from the AI analysis. Scanned/image-only documents therefore need OCR before they can be analysed.
 
 The API also limits input size and document length to protect processing resources. A PDF that passes validation can still produce incomplete AI output.
 

@@ -138,6 +138,19 @@ def make_pdf(text: str = "Test procurement document") -> bytes:
         pdf.save(buffer)
     return buffer.getvalue()
 
+def make_pdf_with_blank_page() -> bytes:
+    """Generate a mixed PDF with one text page and one page without selectable text."""
+    buffer = io.BytesIO()
+
+    with pymupdf.open() as pdf:
+        text_page = pdf.new_page()  # type: ignore[attr-defined]
+        text_page.insert_text((72, 72), "Readable tender page")
+        pdf.new_page()  # type: ignore[attr-defined]
+        pdf.save(buffer)
+
+    return buffer.getvalue()
+
+
 def make_encrypted_pdf() -> bytes:
     buffer = io.BytesIO()
 
@@ -1215,6 +1228,40 @@ def test_upload_scanned_pdf_returns_ocr_required(client, auth_headers):
     assert response.status_code == 200
     assert response.json()["pages_with_text"] == 0
     assert response.json()["analysis"]["status"] == "ocr_required"
+
+def test_mixed_pdf_marks_pages_without_text_as_partial(client, auth_headers):
+    with (
+        patch(
+            "app.api.routes.tenders.analyze_tender",
+            new=AsyncMock(return_value="Rapport test"),
+        ),
+        patch(
+            "app.api.routes.tenders.extract_structured_tender",
+            new=AsyncMock(return_value=make_structured()),
+        ),
+    ):
+        response = client.post(
+            "/api/v1/tenders/analyze-pdf",
+            files={
+                "file": (
+                    "mixed.pdf",
+                    make_pdf_with_blank_page(),
+                    "application/pdf",
+                )
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["page_count"] == 2
+    assert body["pages_with_text"] == 1
+    assert body["analysis"]["status"] == "analysis_partial"
+    assert body["analysis"]["metadata"]["pages_without_text"] == [2]
+    assert "pages_without_selectable_text" in (
+        body["analysis"]["metadata"]["degradation_reasons"]
+    )
+
 
 def test_upload_returns_503_when_ai_connection_fails(
     client, auth_headers, monkeypatch
