@@ -459,7 +459,7 @@ async def analyze_pdf(
     if parsed_deadline is None:
         parsed_deadline_time = None
     deadline_text = (
-        structured.tender.deadline or _deadline_line_from_document(document_text)
+        _deadline_line_from_document(document_text) or structured.tender.deadline
     )
     # The existing database requires both title and description.
     title = (
