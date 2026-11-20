@@ -203,7 +203,7 @@ def make_structured() -> StructuredTenderAnalysis:
             title="Appel d'offres de test",
             reference="AO-TEST-2026-001",
             contracting_authority="Commune de test",
-            estimated_budget=250000.0,
+            estimated_budget=Decimal("250000.0"),
             currency="MAD",
             deadline="15 November 2026 at 12:00",
             provisional_guarantee="5000 MAD",
