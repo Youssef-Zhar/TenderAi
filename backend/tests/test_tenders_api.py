@@ -9,7 +9,8 @@ Tests d'intégration pour POST /api/v1/tenders/analyze-pdf.
 """
 
 import io
-from datetime import date
+from datetime import date, time
+from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 import pymupdf
@@ -309,7 +310,8 @@ def test_analyze_pdf_saves_tender(client, db_session, test_user, auth_headers):
     assert tender.title == "Appel d'offres de test"
     assert tender.description.startswith("Dossier de marché analysé par TenderAI.")
     assert tender.analysis_report == "Rapport test"
-    assert tender.estimated_budget == 250000.0
+    assert tender.estimated_budget == Decimal("250000.0")
+    assert tender.currency == "MAD"
 
 
 def test_analyze_pdf_deadline_parsed(client, db_session , auth_headers):
@@ -323,6 +325,7 @@ def test_analyze_pdf_deadline_parsed(client, db_session , auth_headers):
     tender_id = response.json()["tender_id"]
     tender = db_session.get(Tender, tender_id)
     assert tender.deadline == date(2026, 11, 15)
+    assert tender.deadline_time == time(12, 0)
 
 
 def test_analyze_pdf_saves_condition(client, db_session , auth_headers):
@@ -1366,3 +1369,27 @@ def test_analyze_pdf_rate_limit_is_per_authenticated_user(
         assert other_user_response.status_code == 200
 
     limiter.reset()
+
+
+def test_create_tender_preserves_decimal_currency_and_deadline_time(
+    client, db_session, auth_headers
+):
+    payload = {
+        "title": "Exact financial tender",
+        "description": "A tender used to verify exact decimal persistence.",
+        "estimated_budget": "1234567890.123456",
+        "currency": "EUR",
+        "deadline": "2026-12-31",
+        "deadline_time": "10:30:00",
+    }
+    response = client.post("/api/v1/tenders/", json=payload, headers=auth_headers)
+    assert response.status_code == 201
+    assert response.json()["estimated_budget"] == "1234567890.123456"
+    assert response.json()["currency"] == "EUR"
+    assert response.json()["deadline_time"] == "10:30:00"
+
+    tender = db_session.get(Tender, response.json()["id"])
+    assert tender.estimated_budget == Decimal("1234567890.123456")
+    assert tender.currency == "EUR"
+    assert tender.deadline == date(2026, 12, 31)
+    assert tender.deadline_time == time(10, 30)
