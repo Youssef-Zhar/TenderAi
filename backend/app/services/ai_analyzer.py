@@ -1210,6 +1210,7 @@ def analysis_status(metadata: AnalysisMetadata) -> str:
 async def analyze_tender(
     text: str,
     metadata: AnalysisMetadata | None = None,
+    evidence_cache: list[tuple[str, ChunkExtractionStatus]] | None = None,
 ) -> str:
     """
     Analyse a tender document and return a structured French report.
@@ -1242,6 +1243,8 @@ async def analyze_tender(
         raise ValueError("No text was provided for analysis.")
 
     chunks = split_document(text)
+    if evidence_cache is not None:
+        evidence_cache.clear()
 
     async with _open_client() as client:
 
@@ -1253,6 +1256,8 @@ async def analyze_tender(
                 client, chunk, index, len(chunks), chunk_status
             )
             evidence.append(f"=== EVIDENCE FROM SECTION {index} ===\n{part_evidence}")
+            if evidence_cache is not None:
+                evidence_cache.append((part_evidence, chunk_status))
 
             if metadata is not None:
                 # Explicit outcomes from the extractor take precedence.
@@ -1336,6 +1341,7 @@ async def analyze_tender(
 async def extract_structured_tender(
     text: str,
     metadata: AnalysisMetadata | None = None,
+    evidence_cache: list[tuple[str, ChunkExtractionStatus]] | None = None,
 ) -> StructuredTenderAnalysis:
     """
     Extract structured tender data from each chunk and merge results.
@@ -1348,30 +1354,36 @@ async def extract_structured_tender(
         raise ValueError("No text was provided for structured extraction.")
 
     chunks = split_document(text)
+    if evidence_cache is not None and len(evidence_cache) != len(chunks):
+        raise ValueError(
+            "Cached evidence does not match the document chunk count."
+        )
 
     merged = StructuredTenderAnalysis()
     first_seen_chunk: dict[str, int] = {}
 
     async with _open_client() as client:
         for index, chunk in enumerate(chunks, start=1):
-            chunk_status = ChunkExtractionStatus()
+            if evidence_cache is not None:
+                evidence, chunk_status = evidence_cache[index - 1]
+            else:
+                chunk_status = ChunkExtractionStatus()
+                try:
+                    evidence = await _extract_chunk(
+                        client, chunk, index, len(chunks), chunk_status
+                    )
+                except (AIConnectionError, AITimeoutError, AIStatusError) as exc:
+                    if metadata is None:
+                        raise
 
-            try:
-                evidence = await _extract_chunk(
-                    client, chunk, index, len(chunks), chunk_status
-                )
-            except (AIConnectionError, AITimeoutError, AIStatusError) as exc:
-                if metadata is None:
-                    raise
-
-                logger.warning(
-                    "Evidence extraction failed for section %d/%d (%s).",
-                    index,
-                    len(chunks),
-                    type(exc).__name__,
-                )
-                metadata.structured_failed = True
-                break
+                    logger.warning(
+                        "Evidence extraction failed for section %d/%d (%s).",
+                        index,
+                        len(chunks),
+                        type(exc).__name__,
+                    )
+                    metadata.structured_failed = True
+                    break
 
             if metadata is not None:
                 # Record the Pass-1 evidence outcome. Previously this call
