@@ -408,6 +408,7 @@ Current migration history includes:
 - Initial users table.
 - Tender-related tables for the structured analysis output.
 - Tender ownership support.
+- Exact tender budget storage with nullable currency and deadline-time fields.
 
 Useful commands (run from `backend`):
 
@@ -473,7 +474,7 @@ Tender listing supports:
 - `skip`: number of records to skip; default `0`.
 - `limit`: page size; default `20`, maximum `100`.
 
-The update endpoint currently uses `PUT` and expects the full tender input; partial `PATCH` updates are not implemented.
+The update endpoint currently uses `PUT` and expects the full tender input; partial `PATCH` updates are not implemented. Budget amounts are stored as decimal values and returned as JSON strings to avoid binary floating-point loss. Currency is kept as the extracted source label; amounts in different or unknown currencies must not be summed. Deadline date and optional local time are stored separately; legacy records retain their date and have no inferred time.
 
 ### Operational endpoints
 
