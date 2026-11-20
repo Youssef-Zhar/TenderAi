@@ -109,7 +109,9 @@ export default function Tenders() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [budget, setBudget] = useState('')
+  const [currency, setCurrency] = useState('')
   const [deadline, setDeadline] = useState('')
+  const [deadlineTime, setDeadlineTime] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
@@ -148,13 +150,17 @@ export default function Tenders() {
       await tenderService.create({
         title: title.trim(),
         description: description.trim(),
-        estimated_budget: budget.trim() ? Number(budget) : null,
+        estimated_budget: budget.trim() || null,
+        currency: currency.trim() || null,
         deadline: deadline || null,
+        deadline_time: deadlineTime || null,
       })
       setTitle('')
       setDescription('')
       setBudget('')
+      setCurrency('')
       setDeadline('')
+      setDeadlineTime('')
       setNotice('Tender created successfully.')
       await loadTenders()
     } catch (saveError) {
@@ -235,9 +241,8 @@ export default function Tenders() {
             <label htmlFor="tender-budget" className="mb-2 block text-sm text-muted">Estimated budget</label>
             <input
               id="tender-budget"
-              type="number"
-              min="0"
-              step="any"
+              type="text"
+              inputMode="decimal"
               value={budget}
               onChange={(event) => setBudget(event.target.value)}
               className="w-full rounded-lg border border-border bg-background px-4 py-3 text-sm text-white outline-none focus:border-primary"
@@ -245,12 +250,34 @@ export default function Tenders() {
             />
           </div>
           <div>
-            <label htmlFor="tender-deadline" className="mb-2 block text-sm text-muted">Deadline</label>
+            <label htmlFor="tender-currency" className="mb-2 block text-sm text-muted">Currency</label>
+            <input
+              id="tender-currency"
+              type="text"
+              maxLength={32}
+              value={currency}
+              onChange={(event) => setCurrency(event.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-4 py-3 text-sm text-white outline-none focus:border-primary"
+              placeholder="e.g. MAD, EUR, USD"
+            />
+          </div>
+          <div>
+            <label htmlFor="tender-deadline" className="mb-2 block text-sm text-muted">Deadline date</label>
             <input
               id="tender-deadline"
               type="date"
               value={deadline}
               onChange={(event) => setDeadline(event.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-4 py-3 text-sm text-white outline-none focus:border-primary"
+            />
+          </div>
+          <div>
+            <label htmlFor="tender-deadline-time" className="mb-2 block text-sm text-muted">Deadline time</label>
+            <input
+              id="tender-deadline-time"
+              type="time"
+              value={deadlineTime}
+              onChange={(event) => setDeadlineTime(event.target.value)}
               className="w-full rounded-lg border border-border bg-background px-4 py-3 text-sm text-white outline-none focus:border-primary"
             />
           </div>
@@ -296,8 +323,8 @@ export default function Tenders() {
                   )}
                   <p className="mt-2 text-xs text-muted">
                     Record #{tender.id}
-                    {tender.estimated_budget !== null ? ` · Budget: ${tender.estimated_budget}` : ''}
-                    {tender.deadline ? ` · Deadline: ${tender.deadline}` : ''}
+                    {tender.estimated_budget !== null ? ` · Budget: ${tender.estimated_budget}${tender.currency ? ` ${tender.currency}` : ' (currency unknown)'}` : ''}
+                    {tender.deadline ? ` · Deadline: ${tender.deadline}${tender.deadline_time ? ` ${tender.deadline_time.slice(0, 5)}` : ''}` : ''}
                   </p>
                 </div>
                 <button
