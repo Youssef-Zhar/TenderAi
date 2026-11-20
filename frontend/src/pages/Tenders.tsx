@@ -324,7 +324,7 @@ export default function Tenders() {
                   <p className="mt-2 text-xs text-muted">
                     Record #{tender.id}
                     {tender.estimated_budget !== null ? ` · Budget: ${tender.estimated_budget}${tender.currency ? ` ${tender.currency}` : ' (currency unknown)'}` : ''}
-                    {tender.deadline ? ` · Deadline: ${tender.deadline}${tender.deadline_time ? ` ${tender.deadline_time.slice(0, 5)}` : ''}` : ''}
+                    {tender.deadline_text ? ` · Deadline: ${tender.deadline_text}` : tender.deadline ? ` · Deadline: ${tender.deadline}${tender.deadline_time ? ` ${tender.deadline_time.slice(0, 5)}` : ''}` : ''}
                   </p>
                 </div>
                 <button
