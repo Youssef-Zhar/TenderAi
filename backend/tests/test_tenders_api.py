@@ -973,6 +973,7 @@ def test_delete_nonexistent_tender_returns_404(client, auth_headers):
         ("title", "abc"),
         ("description", "too short"),
         ("estimated_budget", -1),
+        ("deadline_time", "10:30:00"),
     ],
 )
 def test_create_tender_rejects_invalid_fields(
