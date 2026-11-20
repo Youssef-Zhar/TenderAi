@@ -1657,7 +1657,7 @@ async def extract_structured_tender(
     merged.ambiguous_evidence_count = verification_counts["ambiguous"]
 
     unique_conflicts: dict[
-        tuple[str, str | int | float | None, str | int | float | None],
+        tuple[str, str | int | float | Decimal | None, str | int | float | Decimal | None],
         ExtractionConflictItem,
     ] = {}
     for conflict in merged.extraction_conflicts:
