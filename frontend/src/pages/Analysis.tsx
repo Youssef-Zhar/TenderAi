@@ -159,6 +159,12 @@ export default function Analysis() {
                       <li key={`${reason}-${index}`}>{humanize(reason)}</li>
                     ))}
                   </ul>
+                  {metadata.pages_without_text.length > 0 && (
+                    <p className="mt-3 text-sm text-amber-200">
+                      Pages without selectable text: {metadata.pages_without_text.join(', ')}.
+                      Their contents were not included in the AI analysis; OCR is required to review them.
+                    </p>
+                  )}
                   <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted">
                     {metadata.report_truncated && <span className="rounded bg-background px-2 py-1">Report evidence incomplete</span>}
                     {metadata.structured_truncated && <span className="rounded bg-background px-2 py-1">Structured extraction truncated</span>}
