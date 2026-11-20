@@ -981,6 +981,8 @@ def test_create_tender_rejects_invalid_fields(
 ):
     payload = VALID_TENDER_PAYLOAD.copy()
     payload[field] = value
+    if field == "deadline_time":
+        payload["deadline"] = None
 
     response = client.post(
         "/api/v1/tenders/",
