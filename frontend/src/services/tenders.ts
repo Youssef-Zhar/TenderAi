@@ -9,6 +9,7 @@ export interface Tender {
   currency: string | null
   deadline: string | null
   deadline_time: string | null
+  deadline_text: string | null
 }
 
 export interface TenderInput {
