@@ -369,7 +369,10 @@ async def analyze_pdf(
     # 7. Ask AI to generate the report and structured data.
     # The report is generated first so a valid report is never discarded when
     # structured extraction degrades or fails.
-    metadata = AnalysisMetadata()
+    pages_without_text = [
+        page["page"] for page in pages if not page["text"]
+    ]
+    metadata = AnalysisMetadata(pages_without_text=pages_without_text)
     evidence_cache = []
     analysis_started = perf_counter()
 
