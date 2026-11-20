@@ -56,6 +56,7 @@ export interface AnalysisResponse {
       ambiguous_evidence_count: number
       extraction_conflict_count: number
       degradation_reasons: string[]
+      pages_without_text: number[]
     }
   }
 }
