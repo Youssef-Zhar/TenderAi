@@ -811,6 +811,75 @@ async def test_extract_structured_tender_merges_multiple_chunks():
     assert len(result.documents) == 1
 
 
+@pytest.mark.asyncio
+async def test_analyze_tender_populates_shared_evidence_cache():
+    from app.services import ai_analyzer
+
+    evidence_cache = []
+
+    async def fake_extract_chunk(client, chunk, index, total, status=None):
+        return f"Evidence for chunk {index}"
+
+    async def fake_call_openrouter(
+        client, system_prompt, user_message, max_tokens
+    ):
+        return "Rapport complet", "stop"
+
+    with (
+        patch.object(ai_analyzer, "split_document", return_value=["chunk"]),
+        patch.object(ai_analyzer, "_extract_chunk", side_effect=fake_extract_chunk),
+        patch.object(ai_analyzer, "_call_openrouter", side_effect=fake_call_openrouter),
+        patch.object(ai_analyzer, "_open_client", return_value=_fake_open_client()),
+    ):
+        report = await ai_analyzer.analyze_tender(
+            "text for testing",
+            evidence_cache=evidence_cache,
+        )
+
+    assert report == "Rapport complet"
+    assert len(evidence_cache) == 1
+    assert evidence_cache[0][0] == "Evidence for chunk 1"
+    assert isinstance(evidence_cache[0][1], ChunkExtractionStatus)
+
+
+@pytest.mark.asyncio
+async def test_extract_structured_tender_reuses_cached_evidence():
+    from app.services import ai_analyzer
+    from app.schemas.analysis import AnalysisMetadata
+
+    metadata = AnalysisMetadata()
+    cached_status = ChunkExtractionStatus(fallback_used=True, truncated=True)
+    evidence_cache = [("CACHED EVIDENCE", cached_status)]
+    payload = {"tender": {"title": "Titre extrait depuis le cache"}}
+
+    async def fake_call_openrouter(
+        client, system_prompt, user_message, max_tokens
+    ):
+        assert "CACHED EVIDENCE" in user_message
+        return json.dumps(payload), "stop"
+
+    extract_mock = AsyncMock(
+        side_effect=AssertionError("Evidence must not be extracted twice.")
+    )
+
+    with (
+        patch.object(ai_analyzer, "split_document", return_value=["chunk"]),
+        patch.object(ai_analyzer, "_extract_chunk", new=extract_mock),
+        patch.object(ai_analyzer, "_call_openrouter", side_effect=fake_call_openrouter),
+        patch.object(ai_analyzer, "_open_client", return_value=_fake_open_client()),
+    ):
+        result = await ai_analyzer.extract_structured_tender(
+            "text for testing",
+            metadata=metadata,
+            evidence_cache=evidence_cache,
+        )
+
+    extract_mock.assert_not_awaited()
+    assert result.tender.title == "Titre extrait depuis le cache"
+    assert metadata.fallback_used is True
+    assert metadata.structured_truncated is True
+
+
 from app.services.deadline_parser import parse_deadline
 
 
