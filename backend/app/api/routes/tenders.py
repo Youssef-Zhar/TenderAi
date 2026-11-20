@@ -15,6 +15,7 @@ POST   /api/v1/tenders/analyze-pdf  — upload a PDF and analyse it with AI
 
 from io import BytesIO
 from pathlib import Path
+from time import perf_counter
 
 import logging
 
@@ -369,9 +370,15 @@ async def analyze_pdf(
     # The report is generated first so a valid report is never discarded when
     # structured extraction degrades or fails.
     metadata = AnalysisMetadata()
+    evidence_cache = []
+    analysis_started = perf_counter()
 
     try:
-        report = await analyze_tender(document_text, metadata=metadata)
+        report = await analyze_tender(
+            document_text,
+            metadata=metadata,
+            evidence_cache=evidence_cache,
+        )
 
     except AIConnectionError as exc:
         raise HTTPException(
@@ -400,7 +407,9 @@ async def analyze_pdf(
 
     try:
         structured = await extract_structured_tender(
-            document_text, metadata=metadata
+            document_text,
+            metadata=metadata,
+            evidence_cache=evidence_cache,
         )
     except (AIConnectionError, AITimeoutError, AIStatusError, ValueError, RuntimeError) as exc:
         # Structured extraction failed but the report is valid: degrade rather
@@ -408,6 +417,16 @@ async def analyze_pdf(
         logger.warning("Structured extraction failed (%s).", type(exc).__name__)
         metadata.structured_failed = True
         structured = StructuredTenderAnalysis()
+
+    logger.info(
+        "Tender AI analysis finished: chunks=%d, duration=%.2fs, "
+        "report_truncated=%s, structured_truncated=%s, structured_failed=%s",
+        len(evidence_cache),
+        perf_counter() - analysis_started,
+        metadata.report_truncated,
+        metadata.structured_truncated,
+        metadata.structured_failed,
+    )
 
     build_analysis_metadata(metadata, structured)
     analysis_status_value = analysis_status(metadata)
