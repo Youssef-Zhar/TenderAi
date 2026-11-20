@@ -23,3 +23,4 @@ class Tender(Base):
     currency: Mapped[str | None] = mapped_column(String(32), nullable=True)
     deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
     deadline_time: Mapped[time | None] = mapped_column(Time, nullable=True)
+    deadline_text: Mapped[str | None] = mapped_column(Text, nullable=True)
