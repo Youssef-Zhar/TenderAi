@@ -2548,3 +2548,14 @@ def test_evidence_matches_scalar_compares_provisional_guarantee_as_money():
     assert _evidence_matches_scalar(
         evidence, "provisional_guarantee", "6 000 MAD"
     ) is False
+
+
+@pytest.mark.asyncio
+async def test_extract_structured_tender_preserves_budget_decimal_precision():
+    raw_json = (
+        '{"tender":{"estimated_budget":1234567890.123456,'
+        '"currency":"MAD"},"conditions":[],"documents":[],"criteria":[],"evidence":[]}'
+    )
+    result = await _run_structured_extraction([raw_json], ["chunk"])
+    assert result.tender.estimated_budget == Decimal("1234567890.123456")
+    assert result.tender.currency == "MAD"
