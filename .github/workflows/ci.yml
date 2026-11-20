@@ -5,9 +5,11 @@ on:
     branches:
       - main
       - "feature/**"
+      - "fix/**"
   pull_request:
     branches:
       - main
+      - "fix/analysis-report-accuracy"
 
 permissions:
   contents: read
