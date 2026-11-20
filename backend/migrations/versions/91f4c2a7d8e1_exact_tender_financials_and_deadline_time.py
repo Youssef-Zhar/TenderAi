@@ -27,10 +27,12 @@ def upgrade() -> None:
     )
     op.add_column("tenders", sa.Column("currency", sa.String(length=32), nullable=True))
     op.add_column("tenders", sa.Column("deadline_time", sa.Time(), nullable=True))
+    op.add_column("tenders", sa.Column("deadline_text", sa.Text(), nullable=True))
 
 
 def downgrade() -> None:
     """Restore the legacy schema; new currency/time values are discarded."""
+    op.drop_column("tenders", "deadline_text")
     op.drop_column("tenders", "deadline_time")
     op.drop_column("tenders", "currency")
     op.alter_column(
