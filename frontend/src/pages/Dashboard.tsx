@@ -93,7 +93,7 @@ export default function Dashboard() {
       bg: 'bg-primary/10',
     },
     {
-      label: 'Estimated Budget',
+      label: 'Tenders with budget',
       value: String(summary.budgetCount),
       description: 'Amounts are kept separate by currency',
       icon: Wallet,
@@ -211,7 +211,7 @@ export default function Dashboard() {
                       {formatBudget(tender.estimated_budget, tender.currency)}
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-muted">
-                      {tender.deadline ? `${formatDate(tender.deadline)}${tender.deadline_time ? ` · ${tender.deadline_time.slice(0, 5)}` : ''}` : 'Not specified'}
+                      {tender.deadline_text || (tender.deadline ? `${formatDate(tender.deadline)}${tender.deadline_time ? ` · ${tender.deadline_time.slice(0, 5)}` : ''}` : 'Not specified')}
                     </td>
                   </tr>
                 ))}
@@ -229,7 +229,7 @@ export default function Dashboard() {
           </div>
           <p className="mt-4 text-sm text-muted">{summary.upcoming[0].title}</p>
           <p className="mt-2 text-xl font-bold text-white">
-            {summary.upcoming[0].deadline ? `${formatDate(summary.upcoming[0].deadline)}${summary.upcoming[0].deadline_time ? ` · ${summary.upcoming[0].deadline_time.slice(0, 5)}` : ''}` : 'Not specified'}
+            {summary.upcoming[0].deadline_text || (summary.upcoming[0].deadline ? `${formatDate(summary.upcoming[0].deadline)}${summary.upcoming[0].deadline_time ? ` · ${summary.upcoming[0].deadline_time.slice(0, 5)}` : ''}` : 'Not specified')}
           </p>
         </section>
       )}
