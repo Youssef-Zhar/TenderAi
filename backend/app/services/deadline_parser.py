@@ -116,7 +116,7 @@ def parse_deadline_time(value: str | None) -> time | None:
     if not value or not isinstance(value, str):
         return None
     matches = list(re.finditer(
-        r"(?<!\\d)(\\d{1,2})\\s*(?:h|:)\\s*(\\d{2})(?!\\d)",
+        r"(?<!\d)(\d{1,2})\s*(?:h|:)\s*(\d{2})(?!\d)",
         _normalise(value),
         re.IGNORECASE,
     ))
