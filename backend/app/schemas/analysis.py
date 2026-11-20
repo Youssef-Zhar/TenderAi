@@ -1,4 +1,6 @@
 
+from decimal import Decimal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 class TenderDetails(BaseModel):
@@ -6,7 +8,9 @@ class TenderDetails(BaseModel):
     reference: str | None = None
     contracting_authority: str | None = None
     model_config = ConfigDict(allow_inf_nan=False)
-    estimated_budget: float | None = None
+    estimated_budget: Decimal | None = Field(
+        default=None, ge=0, max_digits=24, decimal_places=6
+    )
     currency: str | None = None
     deadline: str | None = None
     provisional_guarantee: str | None = None
@@ -49,8 +53,8 @@ class TenderEvidenceItem(BaseModel):
 
 class ExtractionConflictItem(BaseModel):
     field_name: str
-    first_value: str | int | float | None = None
-    second_value: str | int | float | None = None
+    first_value: str | int | float | Decimal | None = None
+    second_value: str | int | float | Decimal | None = None
     first_chunk_index: int | None = None
     second_chunk_index: int | None = None
     model_config = ConfigDict(allow_inf_nan=False)
