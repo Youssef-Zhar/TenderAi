@@ -326,6 +326,7 @@ def test_analyze_pdf_deadline_parsed(client, db_session , auth_headers):
     tender = db_session.get(Tender, tender_id)
     assert tender.deadline == date(2026, 11, 15)
     assert tender.deadline_time == time(12, 0)
+    assert tender.deadline_text == "15 November 2026 at 12:00"
 
 
 def test_analyze_pdf_saves_condition(client, db_session , auth_headers):
@@ -1381,15 +1382,18 @@ def test_create_tender_preserves_decimal_currency_and_deadline_time(
         "currency": "EUR",
         "deadline": "2026-12-31",
         "deadline_time": "10:30:00",
+        "deadline_text": "31 December 2026 at 10:30",
     }
     response = client.post("/api/v1/tenders/", json=payload, headers=auth_headers)
     assert response.status_code == 201
     assert response.json()["estimated_budget"] == "1234567890.123456"
     assert response.json()["currency"] == "EUR"
     assert response.json()["deadline_time"] == "10:30:00"
+    assert response.json()["deadline_text"] == "31 December 2026 at 10:30"
 
     tender = db_session.get(Tender, response.json()["id"])
     assert tender.estimated_budget == Decimal("1234567890.123456")
     assert tender.currency == "EUR"
     assert tender.deadline == date(2026, 12, 31)
     assert tender.deadline_time == time(10, 30)
+    assert tender.deadline_text == "31 December 2026 at 10:30"
