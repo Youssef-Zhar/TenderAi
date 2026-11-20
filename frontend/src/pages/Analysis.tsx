@@ -292,7 +292,7 @@ export default function Analysis() {
                       <li key={`${criterion.name}-${index}`} className="rounded-lg bg-background p-4">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className="text-sm font-semibold text-white">{criterion.name}</p>
-                          {criterion.weight !== null && <span className="text-xs font-semibold text-primary">{criterion.weight}%</span>}
+                          {criterion.weight !== null && <span className="text-xs font-semibold text-primary">Weight / score: {criterion.weight}</span>}
                         </div>
                         {criterion.description && <p className="mt-1 text-sm text-white/80">{criterion.description}</p>}
                       </li>
