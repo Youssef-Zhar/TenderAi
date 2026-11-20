@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 _MONTHS: dict[str, int] = {
     # French
@@ -109,3 +109,20 @@ def parse_deadline(value: str | None) -> date | None:
                 return None
 
     return None
+
+
+def parse_deadline_time(value: str | None) -> time | None:
+    """Parse one explicit 24-hour time; ambiguous or invalid values return None."""
+    if not value or not isinstance(value, str):
+        return None
+    matches = list(re.finditer(
+        r"(?<!\\d)(\\d{1,2})\\s*(?:h|:)\\s*(\\d{2})(?!\\d)",
+        _normalise(value),
+        re.IGNORECASE,
+    ))
+    if len(matches) != 1:
+        return None
+    hour, minute = int(matches[0].group(1)), int(matches[0].group(2))
+    if hour > 23 or minute > 59:
+        return None
+    return time(hour=hour, minute=minute)
