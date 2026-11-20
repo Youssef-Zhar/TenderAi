@@ -30,6 +30,7 @@ import math
 
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from time import perf_counter
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
@@ -382,6 +383,7 @@ async def _call_openrouter(
     Send one OpenRouter Chat Completions request with retries.
     """
 
+    request_started = perf_counter()
     RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
     MAX_ATTEMPTS = 3
 
@@ -486,7 +488,13 @@ async def _call_openrouter(
             "OpenRouter request failed without a response."
         )
 
-    return _parse_openrouter_response(response, max_tokens)
+    result = _parse_openrouter_response(response, max_tokens)
+    logger.info(
+        "OpenRouter request completed: attempts=%d, duration=%.2fs",
+        attempt,
+        perf_counter() - request_started,
+    )
+    return result
 
 
 # ── Extraction helpers ──
