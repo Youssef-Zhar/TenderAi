@@ -62,14 +62,14 @@ export default function Dashboard() {
     const budgetCount = tenders.filter(
       (tender) => tender.estimated_budget !== null
     ).length
-    const now = new Date()
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
 
     const upcoming = tenders
       .filter((tender) => {
         if (!tender.deadline) return false
-        const time = tender.deadline_time?.slice(0, 5) || '23:59'
-        const deadline = new Date(`${tender.deadline}T${time}:00`)
-        return !Number.isNaN(deadline.getTime()) && deadline >= now
+        const deadline = new Date(`${tender.deadline}T00:00:00`)
+        return !Number.isNaN(deadline.getTime()) && deadline >= today
       })
       .sort((a, b) => {
         const first = `${a.deadline || ''}T${a.deadline_time?.slice(0, 5) || '23:59'}`
