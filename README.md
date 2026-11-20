@@ -651,8 +651,8 @@ GitHub Actions workflow: `.github/workflows/ci.yml`.
 
 The current CI workflow:
 
-1. Runs on pushes to `main` and `feature/**` branches.
-2. Runs on pull requests targeting `main`.
+1. Runs on pushes to `main`, `feature/**`, and `fix/**` branches.
+2. Runs on pull requests targeting `main` or the active analysis-fix base branch.
 3. Runs backend tests on Ubuntu with Python 3.13.
 4. Installs `backend/requirements-dev.txt` and runs `python -m pytest -v`.
 5. Runs frontend checks on Ubuntu with Node.js 24.
