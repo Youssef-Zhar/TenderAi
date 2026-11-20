@@ -1160,6 +1160,7 @@ _DEGRADATION_CONDITIONS = (
     "rejected_evidence",
     "ambiguous_evidence",
     "extraction_conflicts",
+    "pages_without_selectable_text",
 )
 
 
@@ -1185,6 +1186,7 @@ def build_analysis_metadata(
         "rejected_evidence": metadata.rejected_evidence_count > 0,
         "ambiguous_evidence": metadata.ambiguous_evidence_count > 0,
         "extraction_conflicts": metadata.extraction_conflict_count > 0,
+        "pages_without_selectable_text": bool(metadata.pages_without_text),
     }
 
     reasons: list[str] = []
