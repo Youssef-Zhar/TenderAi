@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, time
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -7,9 +8,12 @@ class TenderInput(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
     title: str = Field(min_length=5, max_length=200)
     description: str = Field(min_length=20)
-    estimated_budget: float | None = Field(default=None, ge=0)
+    estimated_budget: Decimal | None = Field(
+        default=None, ge=0, max_digits=24, decimal_places=6
+    )
+    currency: str | None = Field(default=None, max_length=32)
     deadline: date | None = None
-
+    deadline_time: time | None = None
 
 
 class TenderCreate(TenderInput):
