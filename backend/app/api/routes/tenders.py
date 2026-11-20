@@ -147,6 +147,7 @@ def create_tender(
         currency=payload.currency,
         deadline=payload.deadline,
         deadline_time=payload.deadline_time,
+        deadline_text=payload.deadline_text,
     )
 
     try:
@@ -229,6 +230,7 @@ def update_tender(
         tender.currency = payload.currency
         tender.deadline = payload.deadline
         tender.deadline_time = payload.deadline_time
+        tender.deadline_text = payload.deadline_text
 
 
 
@@ -454,6 +456,11 @@ async def analyze_pdf(
     parsed_deadline_time = parse_deadline_time(structured.tender.deadline)
     if parsed_deadline_time is None:
         parsed_deadline_time = _parse_deadline_time_from_document(document_text)
+    if parsed_deadline is None:
+        parsed_deadline_time = None
+    deadline_text = (
+        structured.tender.deadline or _deadline_line_from_document(document_text)
+    )
     # The existing database requires both title and description.
     title = (
         structured.tender.title or Path(file.filename).stem
@@ -477,6 +484,7 @@ async def analyze_pdf(
         currency=structured.tender.currency,
         deadline=parsed_deadline,
         deadline_time=parsed_deadline_time,
+        deadline_text=deadline_text,
     )
 
     # 9. Save the tender and its related records atomically
