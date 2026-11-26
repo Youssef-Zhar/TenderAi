@@ -43,17 +43,19 @@ def extract(pdf):
         ocr_languages="fra+ara+eng",
         ocr_dpi=250,
         ocr_min_text_chars=80,
+        ocr_max_pages=50,
     )
 
 
 def test_ocr_is_used_for_scanned_image_page():
     page = FakePage(images=[(1,)], ocr_text="Recognized scanned tender text")
 
-    pages, ocr_pages, failed_pages = extract(FakePdf([page]))
+    pages, ocr_pages, failed_pages, skipped_pages = extract(FakePdf([page]))
 
     assert pages == [{"page": 1, "text": "Recognized scanned tender text"}]
     assert ocr_pages == [1]
     assert failed_pages == []
+    assert skipped_pages == []
     assert page.ocr_calls[0]["full"] is True
     assert page.ocr_calls[0]["language"] == "fra+ara+eng"
     assert page.ocr_calls[0]["dpi"] == 250
@@ -97,3 +99,27 @@ def test_ocr_failure_preserves_native_text_and_records_page():
     assert pages == [{"page": 1, "text": "Short native text"}]
     assert ocr_pages == []
     assert failed_pages == [1]
+    assert skipped_pages == []
+
+
+
+def test_ocr_page_limit_skips_later_pages():
+    first = FakePage(images=[(1,)], ocr_text="First scanned page")
+    second = FakePage(images=[(2,)], ocr_text="Second scanned page")
+
+    pages, ocr_pages, failed_pages, skipped_pages = extract_pdf_pages(
+        FakePdf([first, second]),
+        ocr_languages="fra+ara+eng",
+        ocr_dpi=250,
+        ocr_min_text_chars=80,
+        ocr_max_pages=1,
+    )
+
+    assert pages == [
+        {"page": 1, "text": "First scanned page"},
+        {"page": 2, "text": ""},
+    ]
+    assert ocr_pages == [1]
+    assert failed_pages == []
+    assert skipped_pages == [2]
+    assert second.ocr_calls == []
