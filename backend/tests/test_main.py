@@ -29,7 +29,8 @@ def test_health_endpoint():
     assert response.json() == {"status": "healthy"}
 
 
-def test_readiness_endpoint_when_database_is_available():
+def test_readiness_endpoint_when_database_is_available(monkeypatch):
+    monkeypatch.setattr("app.main.settings.redis_url", "")
     with patch("app.main.engine.connect") as mock_connect:
         response = client.get("/ready")
 
