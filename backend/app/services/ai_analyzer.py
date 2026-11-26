@@ -1366,9 +1366,10 @@ async def extract_structured_tender(
     """
     Extract structured tender data from each chunk and merge results.
 
-    When ``metadata`` is supplied, structured truncation and invalid JSON are
-    recorded as degradation outcomes and the safely validated data gathered so
-    far is returned instead of raising.  No unvalidated content is merged.
+    When ``metadata`` is supplied, structured truncation and invalid sections
+    are recorded as degradation outcomes. Invalid JSON/schema sections are
+    skipped so later chunks can still contribute validated data. No unvalidated
+    content is merged.
     """
     if not text.strip():
         raise ValueError("No text was provided for structured extraction.")
