@@ -4,6 +4,7 @@ import { useTheme } from '../context/ThemeContext'
 
 interface HeaderProps {
   onMenuClick: () => void
+  isMenuOpen: boolean
 }
 
 const pageContent: Record<string, { title: string; description: string }> = {
@@ -21,7 +22,7 @@ const pageContent: Record<string, { title: string; description: string }> = {
   },
 }
 
-export default function Header({ onMenuClick }: HeaderProps) {
+export default function Header({ onMenuClick, isMenuOpen }: HeaderProps) {
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
   const currentPage = pageContent[pathname] ?? pageContent['/dashboard']
@@ -34,7 +35,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
           onClick={onMenuClick}
           aria-label="Open navigation menu"
           aria-controls="dashboard-sidebar"
-          aria-expanded={false}
+          aria-expanded={isMenuOpen}
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border bg-surface text-muted transition hover:border-primary/50 hover:bg-surface-hover hover:text-primary lg:hidden"
         >
           <Menu size={19} />
