@@ -17,6 +17,7 @@ def set_valid_settings(monkeypatch):
         "openrouter_api_key": "",
         "openrouter_model": "",
         "openrouter_base_url": "https://openrouter.ai/api/v1",
+        "redis_url": "",
     }
 
     for name, value in valid_values.items():
@@ -173,3 +174,37 @@ def test_validate_settings_rejects_whitespace_openrouter_key(monkeypatch):
 
     with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):
         config.validate_settings()
+
+
+@pytest.mark.parametrize(
+    "redis_url",
+    [
+        "http://localhost:6379",
+        "not-a-redis-url",
+        "redis://",
+        "rediss://",
+        "redis://localhost:6379#unsupported-fragment",
+        "redis://localhost:99999",
+        "redis://[invalid-ipv6",
+    ],
+)
+def test_validate_settings_rejects_invalid_redis_url(monkeypatch, redis_url):
+    set_valid_settings(monkeypatch)
+    monkeypatch.setattr(config.settings, "redis_url", redis_url)
+
+    with pytest.raises(RuntimeError, match="REDIS_URL"):
+        config.validate_settings()
+
+
+@pytest.mark.parametrize(
+    "redis_url",
+    [
+        "redis://localhost:6379/0",
+        "rediss://default:secret@redis.example.com:6380/0",
+    ],
+)
+def test_validate_settings_accepts_valid_redis_url(monkeypatch, redis_url):
+    set_valid_settings(monkeypatch)
+    monkeypatch.setattr(config.settings, "redis_url", redis_url)
+
+    config.validate_settings()
