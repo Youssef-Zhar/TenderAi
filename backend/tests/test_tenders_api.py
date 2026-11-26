@@ -1236,6 +1236,74 @@ def test_upload_scanned_pdf_returns_ocr_required(client, auth_headers):
     assert response.json()["pages_with_text"] == 0
     assert response.json()["analysis"]["status"] == "ocr_required"
 
+
+
+
+def test_upload_scanned_pdf_uses_ocr_extracted_text(
+    client, auth_headers
+):
+    with (
+        patch(
+            "app.api.routes.tenders.extract_pdf_pages",
+            return_value=(
+                [{"page": 1, "text": "OCR extracted tender text"}],
+                [1],
+                [],
+            ),
+        ),
+        patch(
+            "app.api.routes.tenders.analyze_tender",
+            new=AsyncMock(return_value="Rapport OCR"),
+        ),
+        patch(
+            "app.api.routes.tenders.extract_structured_tender",
+            new=AsyncMock(return_value=make_structured()),
+        ),
+    ):
+        response = client.post(
+            "/api/v1/tenders/analyze-pdf",
+            files={
+                "file": (
+                    "scanned.pdf",
+                    make_pdf_pages(1),
+                    "application/pdf",
+                )
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["pages_with_text"] == 1
+    assert body["analysis"]["metadata"]["ocr_pages"] == [1]
+    assert body["analysis"]["metadata"]["ocr_failed_pages"] == []
+
+
+def test_upload_scanned_pdf_reports_ocr_failure(
+    client, auth_headers
+):
+    with patch(
+        "app.api.routes.tenders.extract_pdf_pages",
+        return_value=([{"page": 1, "text": ""}], [], [1]),
+    ):
+        response = client.post(
+            "/api/v1/tenders/analyze-pdf",
+            files={
+                "file": (
+                    "scanned.pdf",
+                    make_pdf_pages(1),
+                    "application/pdf",
+                )
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["analysis"]["status"] == "ocr_required"
+    assert body["analysis"]["metadata"]["ocr_failed_pages"] == [1]
+
+
 def test_mixed_pdf_marks_pages_without_text_as_partial(client, auth_headers):
     with (
         patch(
