@@ -68,7 +68,7 @@ def test_ocr_is_used_for_sparse_native_text_on_image_page():
         ocr_text="Short heading\nRecognized content from the scanned page",
     )
 
-    pages, ocr_pages, failed_pages = extract(FakePdf([page]))
+    pages, ocr_pages, failed_pages, skipped_pages = extract(FakePdf([page]))
 
     assert pages[0]["text"].startswith("Short heading")
     assert ocr_pages == [1]
@@ -79,7 +79,7 @@ def test_ocr_is_used_for_sparse_native_text_on_image_page():
 def test_ocr_is_skipped_for_sufficient_native_text():
     page = FakePage(text="A" * 100, images=[(1,)])
 
-    pages, ocr_pages, failed_pages = extract(FakePdf([page]))
+    pages, ocr_pages, failed_pages, skipped_pages = extract(FakePdf([page]))
 
     assert pages == [{"page": 1, "text": "A" * 100}]
     assert ocr_pages == []
@@ -94,7 +94,7 @@ def test_ocr_failure_preserves_native_text_and_records_page():
         ocr_error=RuntimeError("Tesseract is not installed"),
     )
 
-    pages, ocr_pages, failed_pages = extract(FakePdf([page]))
+    pages, ocr_pages, failed_pages, skipped_pages = extract(FakePdf([page]))
 
     assert pages == [{"page": 1, "text": "Short native text"}]
     assert ocr_pages == []
