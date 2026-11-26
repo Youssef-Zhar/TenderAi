@@ -14,18 +14,30 @@ const navigation = [
   { label: 'AI Analysis', icon: BrainCircuit, href: '/analysis' },
 ]
 
-export default function Sidebar() {
+interface SidebarProps {
+  isOpen: boolean
+  onClose: () => void
+}
+
+export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
   function handleLogout() {
+    onClose()
     logout()
     navigate('/login', { replace: true })
   }
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-border bg-surface">
-      <div className="flex h-20 items-center gap-3 border-b border-border px-6">
+    <aside
+      id="dashboard-sidebar"
+      aria-label="Main navigation"
+      className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-72 max-w-[85vw] shrink-0 flex-col border-r border-border bg-surface transition-transform duration-200 ease-in-out lg:w-64 lg:translate-x-0 ${
+        isOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}
+    >
+      <div className="flex h-20 shrink-0 items-center gap-3 border-b border-border px-6">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
           <ShieldCheck size={23} className="text-white" />
         </div>
@@ -37,7 +49,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 space-y-2 px-4 py-7">
+      <nav className="flex min-h-0 flex-1 flex-col space-y-2 overflow-y-auto px-4 py-7">
         <p className="mb-4 px-3 text-[10px] font-bold tracking-[0.15em] text-muted">
           WORKSPACE
         </p>
@@ -47,6 +59,7 @@ export default function Sidebar() {
             <NavLink
               key={item.href}
               to={item.href}
+              onClick={onClose}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition ${
                   isActive
@@ -62,7 +75,7 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t border-border p-4">
+      <div className="shrink-0 border-t border-border p-4">
         <div className="mb-3 flex items-center gap-3 rounded-lg p-2">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/20 text-sm font-bold uppercase text-primary">
             {user?.email.slice(0, 2) || 'TA'}
