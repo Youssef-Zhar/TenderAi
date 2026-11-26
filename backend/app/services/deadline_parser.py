@@ -4,10 +4,10 @@ app/services/deadline_parser.py
 Parse human-written procurement deadlines into ``datetime.date`` objects.
 
 The AI model returns the submission deadline verbatim (usually in French, e.g.
-``"15 novembre 2026 à 12 h 00"``). This module normalises the common written
-forms and returns the calendar date, or ``None`` when the text is missing or
-unrecognised. The time of day is intentionally discarded because the database
-column is a ``DATE``.
+``"15 novembre 2026 à 12 h 00"``). This module normalises common written
+forms and parses the calendar date and, separately, an explicit 24-hour time.
+Unrecognised or ambiguous values return ``None``; the original source wording
+is preserved by the API for review.
 """
 
 from __future__ import annotations
