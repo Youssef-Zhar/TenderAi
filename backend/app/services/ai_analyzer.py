@@ -30,6 +30,7 @@ import math
 
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from time import perf_counter
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
@@ -81,8 +82,8 @@ MAX_CHUNK_CHARS = 6_000
 CHUNK_OUTPUT_TOKENS = 2_500
 
 # Pass-2 final report token budget.
-# A 6-section French audit report with contradiction tables: 2 000–4 000 tokens.
-FINAL_OUTPUT_TOKENS = 4_000
+# A complete French audit report with evidence-backed contradiction tables: up to 6 500 tokens.
+FINAL_OUTPUT_TOKENS = 6_500
 
 # Structured JSON extraction token budget.
 STRUCTURED_OUTPUT_TOKENS = 8_000
@@ -382,6 +383,7 @@ async def _call_openrouter(
     Send one OpenRouter Chat Completions request with retries.
     """
 
+    request_started = perf_counter()
     RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
     MAX_ATTEMPTS = 3
 
@@ -486,7 +488,13 @@ async def _call_openrouter(
             "OpenRouter request failed without a response."
         )
 
-    return _parse_openrouter_response(response, max_tokens)
+    result = _parse_openrouter_response(response, max_tokens)
+    logger.info(
+        "OpenRouter request completed: attempts=%d, duration=%.2fs",
+        attempt,
+        perf_counter() - request_started,
+    )
+    return result
 
 
 # ── Extraction helpers ──
@@ -1160,6 +1168,7 @@ _DEGRADATION_CONDITIONS = (
     "rejected_evidence",
     "ambiguous_evidence",
     "extraction_conflicts",
+    "pages_without_selectable_text",
 )
 
 
@@ -1185,6 +1194,7 @@ def build_analysis_metadata(
         "rejected_evidence": metadata.rejected_evidence_count > 0,
         "ambiguous_evidence": metadata.ambiguous_evidence_count > 0,
         "extraction_conflicts": metadata.extraction_conflict_count > 0,
+        "pages_without_selectable_text": bool(metadata.pages_without_text),
     }
 
     reasons: list[str] = []
@@ -1210,6 +1220,7 @@ def analysis_status(metadata: AnalysisMetadata) -> str:
 async def analyze_tender(
     text: str,
     metadata: AnalysisMetadata | None = None,
+    evidence_cache: list[tuple[str, ChunkExtractionStatus]] | None = None,
 ) -> str:
     """
     Analyse a tender document and return a structured French report.
@@ -1242,6 +1253,8 @@ async def analyze_tender(
         raise ValueError("No text was provided for analysis.")
 
     chunks = split_document(text)
+    if evidence_cache is not None:
+        evidence_cache.clear()
 
     async with _open_client() as client:
 
@@ -1253,6 +1266,8 @@ async def analyze_tender(
                 client, chunk, index, len(chunks), chunk_status
             )
             evidence.append(f"=== EVIDENCE FROM SECTION {index} ===\n{part_evidence}")
+            if evidence_cache is not None:
+                evidence_cache.append((part_evidence, chunk_status))
 
             if metadata is not None:
                 # Explicit outcomes from the extractor take precedence.
@@ -1274,9 +1289,9 @@ async def analyze_tender(
         combined_evidence = "\n\n".join(evidence)
 
         user_2 = (
-            "Compare and cross-check the evidence below for contradictions "
-            "in dates, amounts, scoring, durations, and requirements.\n\n"
-            "Write a STRUCTURED REPORT IN FRENCH with these six sections "
+            "Audit the evidence below as a careful procurement-document analyst. "
+            "Compare values across sections and preserve the exact meaning of each source.\n\n"
+            "Write a concise but complete STRUCTURED REPORT IN FRENCH with these six sections "
             "(use Markdown headings):\n"
             "1. Résumé du marché\n"
             "2. Contradictions confirmées\n"
@@ -1284,18 +1299,32 @@ async def analyze_tender(
             "4. Contrôles arithmétiques\n"
             "5. Informations importantes cohérentes\n"
             "6. Limites de l'analyse\n\n"
-            "For each contradiction:\n"
-            "- **Sujet** | **Valeur A** (page) | **Valeur B** (page) "
-            "| **Gravité**: élevée/moyenne/faible | **Action requise**\n\n"
-            "STRICT RULES:\n"
-            "- Do not cite a page you have not seen in the evidence.\n"
-            "- Do not choose which value is correct.\n"
-            "- Note any [PARTIAL] or [FALLBACK] sections in the evidence — "
-            "their coverage may be incomplete.\n"
-            "- Distinguish: confirmed contradiction / possible anomaly / "
-            "items requiring human verification.\n"
-            "- Make no legal-compliance claims unless the evidence "
-            "explicitly quotes a legal basis.\n\n"
+            "For every contradiction, provide the subject, each exact value, the source section "
+            "and page when present, severity, and a neutral action required. A contradiction is "
+            "CONFIRMED only when both incompatible values are explicitly present in the evidence.\n\n"
+            "STRICT ACCURACY RULES:\n"
+            "- Never invent facts, values, source sections, page numbers, legal rules, or deadlines. "
+            "If a page number is absent from the evidence, write 'page non précisée'.\n"
+            "- Do not decide which conflicting value prevails. Report both values neutrally.\n"
+            "- Keep units distinct: jours calendaires and jours ouvrables are different. "
+            "Report their conflict when both appear, but do not convert one into the other or "
+            "claim an exact calendar-day equivalent.\n"
+            "- Do not infer statutory percentages, customary practices, or legal compliance. "
+            "Only discuss a legal requirement when the supplied evidence explicitly states it, "
+            "and identify the cited basis. Otherwise label it 'à vérifier'.\n"
+            "- For arithmetic, show the formula and inputs. Recalculate totals independently; "
+            "if the source's inputs are incomplete or ambiguous, say so instead of guessing.\n"
+            "- Distinguish a true contradiction from a missing detail, a drafting/numbering error, "
+            "a possible anomaly, and a coherent item. Do not label matching values as a mismatch.\n"
+            "- Do not infer that a requirement applies to all equipment when the source limits it "
+            "to a specific category. Preserve the exact equipment, quantity, duration, and scope.\n"
+            "- Note any [PARTIAL] or [FALLBACK] evidence sections and explain that their coverage "
+            "may be incomplete. Never present a finding based only on missing evidence as proof "
+            "that the document lacks the information.\n"
+            "- Include only findings supported by the evidence. If a section has no supported "
+            "findings, state that clearly; never create filler rows or empty tables.\n"
+            "- Use compact Markdown tables with non-empty cells. Keep the report readable and "
+            "avoid repeating the same finding in multiple sections.\n\n"
             "EXTRACTED EVIDENCE:\n"
             f"<evidence>\n{combined_evidence}\n</evidence>\n\n"
             "Write the report now."
@@ -1322,6 +1351,7 @@ async def analyze_tender(
 async def extract_structured_tender(
     text: str,
     metadata: AnalysisMetadata | None = None,
+    evidence_cache: list[tuple[str, ChunkExtractionStatus]] | None = None,
 ) -> StructuredTenderAnalysis:
     """
     Extract structured tender data from each chunk and merge results.
@@ -1334,30 +1364,36 @@ async def extract_structured_tender(
         raise ValueError("No text was provided for structured extraction.")
 
     chunks = split_document(text)
+    if evidence_cache is not None and len(evidence_cache) != len(chunks):
+        raise ValueError(
+            "Cached evidence does not match the document chunk count."
+        )
 
     merged = StructuredTenderAnalysis()
     first_seen_chunk: dict[str, int] = {}
 
     async with _open_client() as client:
         for index, chunk in enumerate(chunks, start=1):
-            chunk_status = ChunkExtractionStatus()
+            if evidence_cache is not None:
+                evidence, chunk_status = evidence_cache[index - 1]
+            else:
+                chunk_status = ChunkExtractionStatus()
+                try:
+                    evidence = await _extract_chunk(
+                        client, chunk, index, len(chunks), chunk_status
+                    )
+                except (AIConnectionError, AITimeoutError, AIStatusError) as exc:
+                    if metadata is None:
+                        raise
 
-            try:
-                evidence = await _extract_chunk(
-                    client, chunk, index, len(chunks), chunk_status
-                )
-            except (AIConnectionError, AITimeoutError, AIStatusError) as exc:
-                if metadata is None:
-                    raise
-
-                logger.warning(
-                    "Evidence extraction failed for section %d/%d (%s).",
-                    index,
-                    len(chunks),
-                    type(exc).__name__,
-                )
-                metadata.structured_failed = True
-                break
+                    logger.warning(
+                        "Evidence extraction failed for section %d/%d (%s).",
+                        index,
+                        len(chunks),
+                        type(exc).__name__,
+                    )
+                    metadata.structured_failed = True
+                    break
 
             if metadata is not None:
                 # Record the Pass-1 evidence outcome. Previously this call
