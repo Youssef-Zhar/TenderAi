@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { FilePlus2, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { getApiErrorMessage } from '../lib/api'
 import { tenderService, type Tender, type TenderDetail } from '../services/tenders'
 
@@ -187,6 +189,7 @@ function TenderDetailSections({ detail }: { detail: TenderDetail }) {
 }
 
 export default function Tenders() {
+  const { isAuthenticated } = useAuth()
   const [tenders, setTenders] = useState<Tender[]>([])
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -203,6 +206,7 @@ export default function Tenders() {
   const [loadingDetailId, setLoadingDetailId] = useState<number | null>(null)
 
   const fetchTenders = useCallback(async () => {
+    if (!isAuthenticated) return
     try {
       const records = await tenderService.list(0, 100)
       setTenders(records)
@@ -212,7 +216,7 @@ export default function Tenders() {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [isAuthenticated])
 
   const loadTenders = useCallback(async () => {
     setIsLoading(true)
@@ -220,10 +224,12 @@ export default function Tenders() {
   }, [fetchTenders])
 
   useEffect(() => {
-    // This effect starts an external request; state updates happen when it settles.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void fetchTenders()
-  }, [fetchTenders])
+    if (isAuthenticated) {
+      // This effect starts an external request; state updates happen when it settles.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void fetchTenders()
+    }
+  }, [fetchTenders, isAuthenticated])
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -295,6 +301,27 @@ export default function Tenders() {
     } catch (deleteError) {
       setError(getApiErrorMessage(deleteError))
     }
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="mx-auto max-w-4xl space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Tenders</h1>
+          <p className="mt-2 text-sm text-muted">Your private tender records and AI reports.</p>
+        </div>
+        <section className="rounded-xl border border-border bg-surface p-10 text-center">
+          <FilePlus2 size={32} className="mx-auto text-muted" />
+          <h2 className="mt-4 text-lg font-semibold text-white">No records displayed</h2>
+          <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-muted">
+            Tender records and analysis reports are private to each account. Sign in to view or manage your own records.
+          </p>
+          <Link to="/login" state={{ from: { pathname: '/tenders' } }} className="mt-5 inline-flex rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-white hover:bg-primary-hover">
+            Sign in to view my tenders
+          </Link>
+        </section>
+      </div>
+    )
   }
 
   return (

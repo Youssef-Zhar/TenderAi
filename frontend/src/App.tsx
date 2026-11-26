@@ -11,11 +11,16 @@ function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
 
+      {/* Public shell: visitors can explore the interface without seeing account data. */}
+      <Route element={<DashboardLayout />}>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/tenders" element={<Tenders />} />
+      </Route>
+
+      {/* Uploading and analysing a PDF always requires an authenticated account. */}
       <Route element={<ProtectedRoute />}>
         <Route element={<DashboardLayout />}>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/tenders" element={<Tenders />} />
           <Route path="/analysis" element={<Analysis />} />
         </Route>
       </Route>
