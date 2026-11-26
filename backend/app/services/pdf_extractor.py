@@ -14,12 +14,12 @@ def extract_pdf_pages(
     ocr_min_text_chars: int,
     ocr_tessdata: str = "",
     ocr_max_pages: int = 50,
-) -> tuple[list[dict[str, str | int]], list[int], list[int]]:
+) -> tuple[list[dict[str, str | int]], list[int], list[int], list[int]]:
     """Extract page text and OCR image-heavy pages with sparse native text.
 
-    Returns page records, page numbers where OCR produced text, and page
-    numbers where the OCR engine raised an error. OCR failures are isolated
-    to their page so readable native PDF text can still be analysed.
+    Returns page records, OCR-success pages, OCR-failure pages, and pages
+    skipped after the configured OCR page budget is exhausted. OCR failures
+    are isolated so readable native PDF text can still be analysed.
     """
     pages: list[dict[str, str | int]] = []
     ocr_pages: list[int] = []
