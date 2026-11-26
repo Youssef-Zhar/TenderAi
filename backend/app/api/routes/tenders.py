@@ -180,13 +180,11 @@ def list_tenders(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> list[TenderResponse]:
-    """Return only the authenticated user's tenders."""
+    """Return the public tender catalogue, without exposing account data."""
 
     tenders = (
         db.query(Tender)
-        .filter(Tender.owner_id == current_user.id)
         .order_by(Tender.id.asc())
         .offset(skip)
         .limit(limit)
@@ -204,11 +202,15 @@ def list_tenders(
 def get_tender(
     tender_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ) -> TenderDetailResponse:
-    """Return an owned tender and its persisted analysis records."""
+    """Return public tender details and its published extraction results."""
 
-    tender = _get_or_404(db, tender_id, current_user)
+    tender = db.query(Tender).filter(Tender.id == tender_id).first()
+    if tender is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tender not found.",
+        )
     base_data = TenderResponse.model_validate(tender).model_dump()
 
     conditions = (
