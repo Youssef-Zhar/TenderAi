@@ -22,6 +22,7 @@ TenderAI is a full-stack prototype for reviewing public procurement documents. I
 - [Environment configuration](#environment-configuration)
 - [Database and migrations](#database-and-migrations)
 - [Running the API](#running-the-api)
+- [Container deployment](#container-deployment)
 - [API reference](#api-reference)
 - [Authentication and security](#authentication-and-security)
 - [PDF validation and limitations](#pdf-validation-and-limitations)
@@ -40,7 +41,7 @@ Public tender dossiers can be lengthy and contain important information spread a
 TenderAI aims to make this information easier to review by:
 
 1. Accepting a tender PDF through an authenticated API endpoint.
-2. Extracting selectable text page by page.
+2. Extracting native text and using local Tesseract OCR for scanned or image-heavy pages when required.
 3. Generating a natural-language analysis report.
 4. Extracting structured tender details, conditions, documents, evaluation criteria, and source evidence.
 5. Checking submitted evidence against the extracted PDF text.
@@ -371,7 +372,7 @@ The development server is available at:
 - Interactive Swagger UI: http://127.0.0.1:8000/docs
 - ReDoc: http://127.0.0.1:8000/redoc
 - Health: http://127.0.0.1:8000/health
-- Readiness: http://127.0.0.1:8000/ready
+- Readiness: http://127.0.0.1:8000/ready (checks MariaDB/MySQL and configured Redis)
 
 ---
 
@@ -395,6 +396,7 @@ The backend reads its settings from `backend/.env` and environment variables. Ne
 | `JWT_ALGORITHM` | JWT algorithm; currently HS256 only | Yes |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Access-token lifetime; accepted range is 1–60 minutes | Optional; default is 30 |
 | `REDIS_URL` | Shared rate-limit storage; use `rediss://` for TLS providers | Optional locally; recommended in production |
+| `LOG_LEVEL` | Application log verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) | Optional; default is `INFO` |
 | `OCR_LANGUAGES` | Tesseract language codes separated by `+` | Optional; default is `fra+ara+eng` |
 | `OCR_DPI` | OCR rendering resolution; accepted range is 150–400 | Optional; default is 250 |
 | `OCR_MIN_TEXT_CHARS` | Pages below this native-text length may use OCR when they contain images/drawings | Optional; default is 80 |
@@ -460,6 +462,40 @@ The `--reload` option is intended for local development, not production.
 FastAPI generates the OpenAPI documentation automatically. Use Swagger UI at `/docs` to register, authenticate, and exercise the protected endpoints.
 
 ---
+
+## Container deployment
+
+The backend includes a production-oriented Dockerfile with Tesseract and French, Arabic, and English language data. It runs as a non-root user, writes structured JSON logs to stdout, and includes a container health check against `/ready`.
+
+Build the image from the repository root:
+
+```bash
+docker build -t tenderai-api ./backend
+```
+
+Run it with environment values supplied at runtime (never baked into the image). For a local MariaDB instance on Docker Desktop:
+
+```bash
+docker run --rm --name tenderai-api \
+  -p 8000:8000 \
+  --env-file backend/.env \
+  -e DB_HOST=host.docker.internal \
+  tenderai-api
+```
+
+Set `REDIS_URL` to a shared Redis service before deploying multiple workers or instances. The readiness endpoint checks Redis when this variable is configured. Apply database migrations as a separate deployment step, after backing up the target database:
+
+```bash
+docker run --rm \
+  --env-file backend/.env \
+  -e DB_HOST=host.docker.internal \
+  --entrypoint alembic \
+  tenderai-api upgrade head
+```
+
+The frontend is a separate Vite application and should be built and hosted as static assets. Configure `VITE_API_BASE_URL` to the public API origin. When running behind a reverse proxy, configure Uvicorn `FORWARDED_ALLOW_IPS` to trust only the proxy addresses; do not use `*` with untrusted clients.
+
+The `/health` endpoint is a liveness check. `/ready` is a readiness check and returns HTTP 503 if MariaDB/MySQL or a configured Redis service is unavailable.
 
 ## API reference
 
@@ -574,7 +610,7 @@ Current security-related implementation includes:
 - Use a strong, unique `SECRET_KEY`; keep it private. Rotating it invalidates existing access tokens.
 - Use separate, least-privilege database accounts for application runtime and schema migrations where appropriate.
 - Do not expose database ports or development server reload mode publicly.
-- Add deployment-specific monitoring, backups, secret management, and operational logging before production use.
+- Structured JSON request logs include request ID, method, path, status code, and duration; logs never include request bodies or authorization headers. Add external log retention, alerting, metrics, backups, and secret management before production use.
 
 This repository is a work in progress and should receive a deployment-focused security review before handling real procurement documents or production user data.
 

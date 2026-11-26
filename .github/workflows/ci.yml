@@ -64,6 +64,10 @@ jobs:
         run: |
           python -m pytest -v
 
+      - name: Build backend Docker image
+        working-directory: backend
+        run: docker build --tag tenderai-api:ci .
+
   frontend-checks:
     name: Frontend Build and Lint
     runs-on: ubuntu-latest

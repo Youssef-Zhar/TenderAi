@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     ocr_min_text_chars: int = 80
     ocr_max_pages: int = 50
     ocr_tessdata: str = ""
+    # Structured application logging.
+    log_level: str = "INFO"
     # Authentication / JWT
     secret_key: str = ""
     jwt_algorithm: str = "HS256"
@@ -55,6 +57,8 @@ def validate_settings() -> None:
             raise RuntimeError(f"{name} must be configured.")
     if not 1 <= settings.db_port <= 65535:
         raise RuntimeError("DB_PORT must be between 1 and 65535.")
+    if settings.log_level.upper() not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+        raise RuntimeError("LOG_LEVEL must be DEBUG, INFO, WARNING, ERROR, or CRITICAL.")
 
     if not 150 <= settings.ocr_dpi <= 400:
         raise RuntimeError("OCR_DPI must be between 150 and 400.")
