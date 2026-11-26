@@ -184,6 +184,8 @@ def test_validate_settings_rejects_whitespace_openrouter_key(monkeypatch):
         "redis://",
         "rediss://",
         "redis://localhost:6379#unsupported-fragment",
+        "redis://localhost:99999",
+        "redis://[invalid-ipv6",
     ],
 )
 def test_validate_settings_rejects_invalid_redis_url(monkeypatch, redis_url):
