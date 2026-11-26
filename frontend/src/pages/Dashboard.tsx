@@ -6,6 +6,8 @@ import {
   RefreshCw,
   Wallet,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { getApiErrorMessage } from '../lib/api'
 import { tenderService, type Tender } from '../services/tenders'
 
@@ -31,11 +33,13 @@ function formatDate(value: string | null): string {
 }
 
 export default function Dashboard() {
+  const { isAuthenticated } = useAuth()
   const [tenders, setTenders] = useState<Tender[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
   const fetchTenders = useCallback(async () => {
+    if (!isAuthenticated) return
     try {
       const records = await tenderService.list(0, 20)
       setTenders(records)
@@ -45,7 +49,7 @@ export default function Dashboard() {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [isAuthenticated])
 
   const loadTenders = useCallback(async () => {
     setIsLoading(true)
@@ -53,10 +57,12 @@ export default function Dashboard() {
   }, [fetchTenders])
 
   useEffect(() => {
-    // This effect starts an external request; state updates happen when it settles.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void fetchTenders()
-  }, [fetchTenders])
+    if (isAuthenticated) {
+      // This effect starts an external request; state updates happen when it settles.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void fetchTenders()
+    }
+  }, [fetchTenders, isAuthenticated])
 
   const summary = useMemo(() => {
     const budgetCount = tenders.filter(
@@ -116,11 +122,13 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold text-white">Overview</h1>
           <p className="mt-2 text-sm text-muted">
-            Live procurement records from your TenderAI account.
+            {isAuthenticated
+            ? 'Live procurement records from your private TenderAI workspace.'
+            : 'Explore TenderAI. Sign in when you are ready to analyse a PDF and manage your records.'}
           </p>
         </div>
 
-        <button
+        {isAuthenticated && <button
           type="button"
           onClick={() => void loadTenders()}
           disabled={isLoading}
@@ -128,10 +136,17 @@ export default function Dashboard() {
         >
           <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
           Refresh
-        </button>
+        </button>}
       </div>
 
-      {error && (
+      {!isAuthenticated && (
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-5">
+          <p className="text-sm text-white">You are browsing as a guest. Your dashboard is intentionally empty.</p>
+          <Link to="/login" state={{ from: { pathname: '/analysis' } }} className="mt-3 inline-flex rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-hover">Sign in to analyse a PDF</Link>
+        </div>
+      )}
+
+      {isAuthenticated && error && (
         <div role="alert" className="rounded-xl border border-danger/30 bg-danger/10 p-4 text-sm text-red-300">
           <p className="font-semibold">Could not load your tenders</p>
           <p className="mt-1">{error}</p>
@@ -159,7 +174,7 @@ export default function Dashboard() {
 
               <p className="mt-5 text-sm text-muted">{stat.label}</p>
               <h2 className="mt-1 break-words text-2xl font-bold text-white">
-                {isLoading ? '—' : stat.value}
+                {isAuthenticated && isLoading ? '—' : stat.value}
               </h2>
               <p className="mt-2 text-xs text-muted">{stat.description}</p>
             </div>
@@ -178,14 +193,16 @@ export default function Dashboard() {
           <span className="text-xs text-muted">Up to 20 records</span>
         </div>
 
-        {isLoading ? (
+        {isAuthenticated && isLoading ? (
           <div className="p-8 text-center text-sm text-muted">Loading tenders...</div>
         ) : tenders.length === 0 && !error ? (
           <div className="p-10 text-center">
             <FileText size={30} className="mx-auto text-muted" />
             <h3 className="mt-3 font-semibold text-white">No tenders yet</h3>
             <p className="mt-2 text-sm text-muted">
-              Your saved tenders will appear here after you create one or analyse a PDF.
+              {isAuthenticated
+                ? 'Your saved tenders will appear here after you create one or analyse a PDF.'
+                : 'No private records are loaded while you are browsing as a guest.'}
             </p>
           </div>
         ) : (
