@@ -121,7 +121,7 @@ FastAPI route
   |
   +--> Validate extension, size, PDF signature and document readability
   |
-  +--> Extract selectable text page by page (PyMuPDF)
+  +--> Extract native text page by page and run local Tesseract OCR on scanned or sparse image-backed pages when required
   |
   +--> Generate natural-language report (OpenRouter)
   |
