@@ -13,6 +13,7 @@ def extract_pdf_pages(
     ocr_dpi: int,
     ocr_min_text_chars: int,
     ocr_tessdata: str = "",
+    ocr_max_pages: int = 50,
 ) -> tuple[list[dict[str, str | int]], list[int], list[int]]:
     """Extract page text and OCR image-heavy pages with sparse native text.
 
@@ -23,6 +24,7 @@ def extract_pdf_pages(
     pages: list[dict[str, str | int]] = []
     ocr_pages: list[int] = []
     ocr_failed_pages: list[int] = []
+    ocr_skipped_pages: list[int] = []
 
     for page_index in range(pdf.page_count):
         page_number = page_index + 1
@@ -35,6 +37,11 @@ def extract_pdf_pages(
         )
 
         if needs_ocr and has_visual_content:
+            if len(ocr_pages) + len(ocr_failed_pages) >= ocr_max_pages:
+                ocr_skipped_pages.append(page_number)
+                pages.append({"page": page_number, "text": page_text})
+                continue
+
             try:
                 text_page = page.get_textpage_ocr(
                     language=ocr_languages,
@@ -59,4 +66,4 @@ def extract_pdf_pages(
 
         pages.append({"page": page_number, "text": page_text})
 
-    return pages, ocr_pages, ocr_failed_pages
+    return pages, ocr_pages, ocr_failed_pages, ocr_skipped_pages
