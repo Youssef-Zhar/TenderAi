@@ -21,6 +21,7 @@ def set_valid_settings(monkeypatch):
         "ocr_languages": "fra+ara+eng",
         "ocr_dpi": 250,
         "ocr_min_text_chars": 80,
+        "ocr_max_pages": 50,
         "ocr_tessdata": "",
     }
 
@@ -239,3 +240,13 @@ def test_validate_settings_accepts_configured_ocr_languages(monkeypatch):
     monkeypatch.setattr(config.settings, "ocr_dpi", 300)
 
     config.validate_settings()
+
+
+
+@pytest.mark.parametrize("max_pages", [0, 201])
+def test_validate_settings_rejects_invalid_ocr_page_limit(monkeypatch, max_pages):
+    set_valid_settings(monkeypatch)
+    monkeypatch.setattr(config.settings, "ocr_max_pages", max_pages)
+
+    with pytest.raises(RuntimeError, match="OCR_MAX_PAGES"):
+        config.validate_settings()
