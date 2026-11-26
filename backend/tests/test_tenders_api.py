@@ -813,14 +813,20 @@ def test_delete_tender_requires_authentication(client):
     assert response.status_code == 401
 
 
-def test_list_tenders_requires_authentication(client):
+def test_list_tenders_is_public(client):
     response = client.get("/api/v1/tenders/")
-    assert response.status_code == 401
+    assert response.status_code == 200
+    assert response.json() == []
 
 
-def test_get_tender_requires_authentication(client):
-    response = client.get("/api/v1/tenders/1")
-    assert response.status_code == 401
+def test_get_tender_is_public(client, db_session, test_user):
+    create_test_tenders(db_session, owner_id=test_user.id, count=1)
+    tender = db_session.query(Tender).first()
+
+    response = client.get(f"/api/v1/tenders/{tender.id}")
+
+    assert response.status_code == 200
+    assert response.json()["title"] == tender.title
 
 def test_get_tender_with_authentication(
     client, db_session, test_user, auth_headers
@@ -964,18 +970,16 @@ def test_delete_tender_with_authentication(
     assert response.status_code == 204
     assert db_session.get(Tender, tender_id) is None
 
-def test_user_cannot_get_another_users_tender(
-    client, db_session, test_user, second_auth_headers
+def test_public_visitor_can_get_any_published_tender(
+    client, db_session, test_user
 ):
     create_test_tenders(db_session, owner_id=test_user.id, count=1)
     tender = db_session.query(Tender).first()
 
-    response = client.get(
-        f"/api/v1/tenders/{tender.id}",
-        headers=second_auth_headers,
-    )
+    response = client.get(f"/api/v1/tenders/{tender.id}")
 
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.json()["id"] == tender.id
 
 
 def test_user_cannot_update_another_users_tender(
@@ -1013,21 +1017,18 @@ def test_user_cannot_delete_another_users_tender(
     assert db_session.get(Tender, tender_id) is not None
 
 
-def test_list_tenders_returns_only_current_users_tenders(
-    client, db_session, test_user, second_test_user, auth_headers
+def test_public_tender_catalogue_includes_all_users_records(
+    client, db_session, test_user, second_test_user
 ):
     create_test_tenders(db_session, owner_id=test_user.id, count=2)
     create_test_tenders(db_session, owner_id=second_test_user.id, count=3)
 
-    response = client.get(
-        "/api/v1/tenders/",
-        headers=auth_headers,
-    )
+    response = client.get("/api/v1/tenders/")
 
     assert response.status_code == 200
     tenders = response.json()
 
-    assert len(tenders) == 2
+    assert len(tenders) == 5
     assert all(tender["title"].startswith("Test Tender") for tender in tenders)
 
 def test_update_nonexistent_tender_returns_404(client, auth_headers):
@@ -1218,8 +1219,8 @@ def test_analyze_pdf_rolls_back_all_records_on_commit_failure(
     assert db_session.query(TenderCriterion).count() == 0
     assert db_session.query(TenderEvidence).count() == 0
 
-def test_list_tenders_hides_legacy_tenders_without_owner(
-    client, db_session, test_user, auth_headers
+def test_public_tender_catalogue_includes_legacy_records_without_owner(
+    client, db_session, test_user
 ):
     legacy_tender = Tender(
         owner_id=None,
@@ -1227,22 +1228,18 @@ def test_list_tenders_hides_legacy_tenders_without_owner(
         description="Old tender without an owner",
     )
     db_session.add(legacy_tender)
-
     create_test_tenders(db_session, owner_id=test_user.id, count=1)
-
     db_session.commit()
 
-    response = client.get(
-        "/api/v1/tenders/",
-        headers=auth_headers,
-    )
+    response = client.get("/api/v1/tenders/")
 
     assert response.status_code == 200
-
     tenders = response.json()
-    assert len(tenders) == 1
-    assert tenders[0]["title"] == "Test Tender 1"
-    assert all(tender["title"] != "Legacy Tender" for tender in tenders)
+    assert len(tenders) == 2
+    assert {tender["title"] for tender in tenders} == {
+        "Legacy Tender",
+        "Test Tender 1",
+    }
 
 
 def test_parse_deadline_from_document_extracts_labeled_deadline():
