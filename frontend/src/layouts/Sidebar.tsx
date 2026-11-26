@@ -69,20 +69,30 @@ export default function Sidebar() {
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-white">
-              {user?.email || 'TenderAI user'}
+              {user?.email || 'Guest visitor'}
             </p>
-            <p className="text-xs text-muted">Authenticated account</p>
+            <p className="text-xs text-muted">{user ? 'Authenticated account' : 'Public access'}</p>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-muted transition hover:bg-surface-hover hover:text-white"
-        >
-          <LogOut size={18} />
-          Sign out
-        </button>
+        {user ? (
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-muted transition hover:bg-surface-hover hover:text-white"
+          >
+            <LogOut size={18} />
+            Sign out
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => navigate('/login')}
+            className="w-full rounded-lg bg-primary px-3 py-3 text-sm font-semibold text-white transition hover:bg-primary-hover"
+          >
+            Sign in to analyse PDFs
+          </button>
+        )}
       </div>
     </aside>
   )
