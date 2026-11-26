@@ -50,6 +50,7 @@ from app.services.ai_analyzer import (
     extract_structured_tender,
 )
 from app.services.deadline_parser import parse_deadline, parse_deadline_time
+from app.services.pdf_extractor import extract_pdf_pages
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
@@ -321,35 +322,25 @@ async def analyze_pdf(
                     detail=f"The PDF must not exceed {MAX_PAGES} pages.",
                 )
 
-            pages = []
-            total_text_chars = 0
-            pages_with_text = 0
+            pages, ocr_pages, ocr_failed_pages = extract_pdf_pages(
+                pdf,
+                ocr_languages=settings.ocr_languages,
+                ocr_dpi=settings.ocr_dpi,
+                ocr_min_text_chars=settings.ocr_min_text_chars,
+                ocr_tessdata=settings.ocr_tessdata,
+            )
 
-            for page_number in range(pdf.page_count):
-                page_text = (
-                    pdf.load_page(page_number)
-                    .get_text("text") # type: ignore[attr-defined]
-                    .strip()
+            total_text_chars = sum(len(str(page["text"])) for page in pages)
+            if total_text_chars > MAX_EXTRACTED_TEXT_CHARS:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=(
+                        "The extracted PDF text must not exceed "
+                        f"{MAX_EXTRACTED_TEXT_CHARS:,} characters."
+                    ),
                 )
 
-                total_text_chars += len(page_text)
-
-                if total_text_chars > MAX_EXTRACTED_TEXT_CHARS:
-                    raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail=(
-                            "The extracted PDF text must not exceed "
-                            f"{MAX_EXTRACTED_TEXT_CHARS:,} characters."
-                        ),
-                    )
-
-                if page_text:
-                    pages_with_text += 1
-
-                pages.append({
-                    "page": page_number + 1,
-                    "text": page_text,
-                })
+            pages_with_text = sum(bool(page["text"]) for page in pages)
 
     except HTTPException:
         raise
@@ -368,8 +359,14 @@ async def analyze_pdf(
                 status="ocr_required",
                 model=settings.openrouter_model,
                 report=(
-                    "No selectable text was found. "
-                    "OCR processing is required but not yet supported."
+                    "No readable text could be extracted from this PDF. "
+                    "Check that Tesseract OCR and the configured language "
+                    "data are installed, then retry the document."
+                ),
+                metadata=AnalysisMetadata(
+                    pages_without_text=[int(page["page"]) for page in pages],
+                    ocr_pages=ocr_pages,
+                    ocr_failed_pages=ocr_failed_pages,
                 ),
             ),
         )
@@ -387,7 +384,11 @@ async def analyze_pdf(
     pages_without_text = [
         page["page"] for page in pages if not page["text"]
     ]
-    metadata = AnalysisMetadata(pages_without_text=pages_without_text)
+    metadata = AnalysisMetadata(
+        pages_without_text=pages_without_text,
+        ocr_pages=ocr_pages,
+        ocr_failed_pages=ocr_failed_pages,
+    )
     evidence_cache = []
     analysis_started = perf_counter()
 
