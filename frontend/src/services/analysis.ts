@@ -14,7 +14,7 @@ export interface AnalysisResponse {
         title: string | null
         reference: string | null
         contracting_authority: string | null
-        estimated_budget: number | null
+        estimated_budget: string | null
         currency: string | null
         deadline: string | null
         provisional_guarantee: string | null

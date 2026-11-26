@@ -5,15 +5,20 @@ export interface Tender {
   title: string
   description: string
   analysis_report?: string | null
-  estimated_budget: number | null
+  estimated_budget: string | null
+  currency: string | null
   deadline: string | null
+  deadline_time: string | null
+  deadline_text: string | null
 }
 
 export interface TenderInput {
   title: string
   description: string
-  estimated_budget: number | null
+  estimated_budget: string | null
+  currency: string | null
   deadline: string | null
+  deadline_time: string | null
 }
 
 export const tenderService = {

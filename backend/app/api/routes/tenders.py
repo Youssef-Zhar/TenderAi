@@ -49,7 +49,7 @@ from app.services.ai_analyzer import (
     build_analysis_metadata,
     extract_structured_tender,
 )
-from app.services.deadline_parser import parse_deadline
+from app.services.deadline_parser import parse_deadline, parse_deadline_time
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
@@ -71,17 +71,26 @@ _DEADLINE_LABELS = (
 )
 
 
-def _parse_deadline_from_document(text: str):
-    """Extract a deadline only from lines explicitly labelled as submission deadlines."""
+def _deadline_line_from_document(text: str) -> str | None:
+    """Return the first explicitly labelled submission-deadline line."""
     for line in text.splitlines():
         normalized_line = line.casefold()
-
         if any(label in normalized_line for label in _DEADLINE_LABELS):
-            parsed = parse_deadline(line)
-            if parsed is not None:
-                return parsed
-
+            if parse_deadline(line) is not None:
+                return line
     return None
+
+
+def _parse_deadline_from_document(text: str):
+    """Extract the date from an explicitly labelled submission deadline."""
+    line = _deadline_line_from_document(text)
+    return parse_deadline(line) if line is not None else None
+
+
+def _parse_deadline_time_from_document(text: str):
+    """Extract the time from an explicitly labelled submission deadline."""
+    line = _deadline_line_from_document(text)
+    return parse_deadline_time(line) if line is not None else None
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
@@ -135,7 +144,10 @@ def create_tender(
         title=payload.title,
         description=payload.description,
         estimated_budget=payload.estimated_budget,
+        currency=payload.currency,
         deadline=payload.deadline,
+        deadline_time=payload.deadline_time,
+        deadline_text=payload.deadline_text,
     )
 
     try:
@@ -215,7 +227,10 @@ def update_tender(
         tender.title = payload.title
         tender.description = payload.description
         tender.estimated_budget = payload.estimated_budget
+        tender.currency = payload.currency
         tender.deadline = payload.deadline
+        tender.deadline_time = payload.deadline_time
+        tender.deadline_text = payload.deadline_text
 
 
 
@@ -438,6 +453,14 @@ async def analyze_pdf(
     parsed_deadline = parse_deadline(structured.tender.deadline)
     if parsed_deadline is None:
         parsed_deadline = _parse_deadline_from_document(document_text)
+    parsed_deadline_time = parse_deadline_time(structured.tender.deadline)
+    if parsed_deadline_time is None:
+        parsed_deadline_time = _parse_deadline_time_from_document(document_text)
+    if parsed_deadline is None:
+        parsed_deadline_time = None
+    deadline_text = (
+        _deadline_line_from_document(document_text) or structured.tender.deadline
+    )
     # The existing database requires both title and description.
     title = (
         structured.tender.title or Path(file.filename).stem
@@ -458,7 +481,10 @@ async def analyze_pdf(
         description=tender_summary,
         analysis_report=report,
         estimated_budget=structured.tender.estimated_budget,
+        currency=structured.tender.currency,
         deadline=parsed_deadline,
+        deadline_time=parsed_deadline_time,
+        deadline_text=deadline_text,
     )
 
     # 9. Save the tender and its related records atomically

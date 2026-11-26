@@ -4,17 +4,17 @@ app/services/deadline_parser.py
 Parse human-written procurement deadlines into ``datetime.date`` objects.
 
 The AI model returns the submission deadline verbatim (usually in French, e.g.
-``"15 novembre 2026 à 12 h 00"``). This module normalises the common written
-forms and returns the calendar date, or ``None`` when the text is missing or
-unrecognised. The time of day is intentionally discarded because the database
-column is a ``DATE``.
+``"15 novembre 2026 à 12 h 00"``). This module normalises common written
+forms and parses the calendar date and, separately, an explicit 24-hour time.
+Unrecognised or ambiguous values return ``None``; the original source wording
+is preserved by the API for review.
 """
 
 from __future__ import annotations
 
 import re
 import unicodedata
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 _MONTHS: dict[str, int] = {
     # French
@@ -109,3 +109,20 @@ def parse_deadline(value: str | None) -> date | None:
                 return None
 
     return None
+
+
+def parse_deadline_time(value: str | None) -> time | None:
+    """Parse one explicit 24-hour time; ambiguous or invalid values return None."""
+    if not value or not isinstance(value, str):
+        return None
+    matches = list(re.finditer(
+        r"(?<!\d)(\d{1,2})\s*(?:h|:)\s*(\d{2})(?!\d)",
+        _normalise(value),
+        re.IGNORECASE,
+    ))
+    if len(matches) != 1:
+        return None
+    hour, minute = int(matches[0].group(1)), int(matches[0].group(2))
+    if hour > 23 or minute > 59:
+        return None
+    return time(hour=hour, minute=minute)

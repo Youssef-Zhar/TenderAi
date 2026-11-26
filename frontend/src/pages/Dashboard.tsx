@@ -9,12 +9,12 @@ import {
 import { getApiErrorMessage } from '../lib/api'
 import { tenderService, type Tender } from '../services/tenders'
 
-function formatBudget(value: number | null): string {
+function formatBudget(value: string | null, currency: string | null): string {
   if (value === null) return 'Not specified'
-
-  return new Intl.NumberFormat('en-US', {
-    maximumFractionDigits: 2,
-  }).format(value)
+  const [integerPart, fractionalPart] = value.split('.')
+  const groupedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  const amount = fractionalPart ? `${groupedInteger}.${fractionalPart}` : groupedInteger
+  return currency ? `${amount} ${currency}` : `${amount} (currency unknown)`
 }
 
 function formatDate(value: string | null): string {
@@ -59,11 +59,9 @@ export default function Dashboard() {
   }, [fetchTenders])
 
   const summary = useMemo(() => {
-    const knownBudgets = tenders
-      .map((tender) => tender.estimated_budget)
-      .filter((budget): budget is number => budget !== null)
-
-    const totalBudget = knownBudgets.reduce((total, budget) => total + budget, 0)
+    const budgetCount = tenders.filter(
+      (tender) => tender.estimated_budget !== null
+    ).length
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
@@ -73,11 +71,14 @@ export default function Dashboard() {
         const deadline = new Date(`${tender.deadline}T00:00:00`)
         return !Number.isNaN(deadline.getTime()) && deadline >= today
       })
-      .sort((a, b) => (a.deadline || '').localeCompare(b.deadline || ''))
+      .sort((a, b) => {
+        const first = `${a.deadline || ''}T${a.deadline_time?.slice(0, 5) || '23:59'}`
+        const second = `${b.deadline || ''}T${b.deadline_time?.slice(0, 5) || '23:59'}`
+        return first.localeCompare(second)
+      })
 
     return {
-      totalBudget,
-      budgetCount: knownBudgets.length,
+      budgetCount,
       upcoming,
     }
   }, [tenders])
@@ -92,9 +93,9 @@ export default function Dashboard() {
       bg: 'bg-primary/10',
     },
     {
-      label: 'Estimated Budget',
-      value: formatBudget(summary.totalBudget),
-      description: `${summary.budgetCount} records with a budget`,
+      label: 'Tenders with budget',
+      value: String(summary.budgetCount),
+      description: 'Amounts are kept separate by currency',
       icon: Wallet,
       color: 'text-amber-400',
       bg: 'bg-amber-400/10',
@@ -207,10 +208,10 @@ export default function Dashboard() {
                       </p>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-white">
-                      {formatBudget(tender.estimated_budget)}
+                      {formatBudget(tender.estimated_budget, tender.currency)}
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-sm text-muted">
-                      {formatDate(tender.deadline)}
+                      {tender.deadline_text || (tender.deadline ? `${formatDate(tender.deadline)}${tender.deadline_time ? ` · ${tender.deadline_time.slice(0, 5)}` : ''}` : 'Not specified')}
                     </td>
                   </tr>
                 ))}
@@ -228,7 +229,7 @@ export default function Dashboard() {
           </div>
           <p className="mt-4 text-sm text-muted">{summary.upcoming[0].title}</p>
           <p className="mt-2 text-xl font-bold text-white">
-            {formatDate(summary.upcoming[0].deadline)}
+            {summary.upcoming[0].deadline_text || (summary.upcoming[0].deadline ? `${formatDate(summary.upcoming[0].deadline)}${summary.upcoming[0].deadline_time ? ` · ${summary.upcoming[0].deadline_time.slice(0, 5)}` : ''}` : 'Not specified')}
           </p>
         </section>
       )}
