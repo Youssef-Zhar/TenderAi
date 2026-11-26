@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     ocr_languages: str = "fra+ara+eng"
     ocr_dpi: int = 250
     ocr_min_text_chars: int = 80
+    ocr_max_pages: int = 50
     ocr_tessdata: str = ""
     # Authentication / JWT
     secret_key: str = ""
@@ -59,6 +60,8 @@ def validate_settings() -> None:
         raise RuntimeError("OCR_DPI must be between 150 and 400.")
     if not 0 <= settings.ocr_min_text_chars <= 1000:
         raise RuntimeError("OCR_MIN_TEXT_CHARS must be between 0 and 1000.")
+    if not 1 <= settings.ocr_max_pages <= 200:
+        raise RuntimeError("OCR_MAX_PAGES must be between 1 and 200.")
     if not re.fullmatch(r"[a-z]{3}(?:\+[a-z]{3})*", settings.ocr_languages):
         raise RuntimeError("OCR_LANGUAGES must be Tesseract language codes separated by +.")
 
