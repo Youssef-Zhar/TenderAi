@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { FilePlus2, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react'
 import { getApiErrorMessage } from '../lib/api'
+import { useAuth } from '../context/AuthContext'
 import { tenderService, type Tender, type TenderDetail } from '../services/tenders'
 
 function renderMarkdown(source: string): string {
@@ -187,6 +188,7 @@ function TenderDetailSections({ detail }: { detail: TenderDetail }) {
 }
 
 export default function Tenders() {
+  const { isAuthenticated } = useAuth()
   const [tenders, setTenders] = useState<Tender[]>([])
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -302,7 +304,7 @@ export default function Tenders() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Tenders</h1>
-          <p className="mt-2 text-sm text-muted">Manage tender records saved to your account.</p>
+          <p className="mt-2 text-sm text-muted">Browse public tender records and their AI-extracted details.</p>
         </div>
         <button
           type="button"
@@ -318,6 +320,7 @@ export default function Tenders() {
       {error && <p role="alert" className="rounded-lg border border-danger/30 bg-danger/10 p-4 text-sm text-red-300">{error}</p>}
       {notice && <p role="status" className="rounded-lg border border-success/30 bg-success/10 p-4 text-sm text-success">{notice}</p>}
 
+      {isAuthenticated && (
       <section className="rounded-xl border border-border bg-surface p-6">
         <div className="mb-5 flex items-center gap-2">
           <FilePlus2 size={19} className="text-primary" />
@@ -406,11 +409,12 @@ export default function Tenders() {
           </div>
         </form>
       </section>
+      )}
 
       <section className="overflow-hidden rounded-xl border border-border bg-surface">
         <div className="border-b border-border px-6 py-5">
           <h2 className="font-semibold text-white">Saved tenders</h2>
-          <p className="mt-1 text-xs text-muted">Your account's tender records (maximum 100 shown)</p>
+          <p className="mt-1 text-xs text-muted">Public tender catalogue (maximum 100 shown)</p>
         </div>
         {isLoading ? (
           <p className="p-8 text-center text-sm text-muted">Loading tenders...</p>
@@ -457,14 +461,16 @@ export default function Tenders() {
                     </div>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void handleDelete(tender)}
-                  aria-label={`Delete ${tender.title}`}
-                  className="rounded-lg p-2 text-muted transition hover:bg-danger/10 hover:text-red-300"
-                >
-                  <Trash2 size={18} />
-                </button>
+                {isAuthenticated && (
+                  <button
+                    type="button"
+                    onClick={() => void handleDelete(tender)}
+                    aria-label={`Delete ${tender.title}`}
+                    className="rounded-lg p-2 text-muted transition hover:bg-danger/10 hover:text-red-300"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                )}
               </article>
             ))}
           </div>
