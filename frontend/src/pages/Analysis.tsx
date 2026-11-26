@@ -123,7 +123,7 @@ export default function Analysis() {
               <div>
                 <h2 className="text-lg font-semibold text-white">Analysis result</h2>
                 <p className="mt-1 text-xs text-muted">
-                  {result.filename} · {result.page_count} pages · {result.pages_with_text} pages with selectable text
+                  {result.filename} · {result.page_count} pages · {result.pages_with_text} pages with extracted text
                 </p>
                 <p className="mt-1 text-xs text-muted">Model: {result.analysis.model}</p>
               </div>
@@ -140,6 +140,31 @@ export default function Analysis() {
               {result.analysis.report}
             </div>
           </section>
+
+          {metadata && (
+            metadata.ocr_pages.length > 0 ||
+            metadata.ocr_failed_pages.length > 0 ||
+            metadata.ocr_skipped_pages.length > 0
+          ) && (
+            <section className="rounded-xl border border-border bg-surface p-5">
+              <h2 className="font-semibold text-white">OCR processing</h2>
+              {metadata.ocr_pages.length > 0 && (
+                <p className="mt-2 text-sm text-success">
+                  Text recovered from pages: {metadata.ocr_pages.join(', ')}.
+                </p>
+              )}
+              {metadata.ocr_failed_pages.length > 0 && (
+                <p className="mt-2 text-sm text-amber-200">
+                  OCR failed on pages: {metadata.ocr_failed_pages.join(', ')}. Check Tesseract and the configured language data.
+                </p>
+              )}
+              {metadata.ocr_skipped_pages.length > 0 && (
+                <p className="mt-2 text-sm text-amber-200">
+                  OCR was skipped on pages: {metadata.ocr_skipped_pages.join(', ')} because the per-upload OCR page limit was reached.
+                </p>
+              )}
+            </section>
+          )}
 
           {metadata && metadata.degradation_reasons.length > 0 && (
             <section
@@ -161,8 +186,8 @@ export default function Analysis() {
                   </ul>
                   {metadata.pages_without_text.length > 0 && (
                     <p className="mt-3 text-sm text-amber-200">
-                      Pages without selectable text: {metadata.pages_without_text.join(', ')}.
-                      Their contents were not included in the AI analysis; OCR is required to review them.
+                      Pages without readable text after OCR: {metadata.pages_without_text.join(', ')}.
+                      Their contents were not included in the AI analysis.
                     </p>
                   )}
                   <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted">
