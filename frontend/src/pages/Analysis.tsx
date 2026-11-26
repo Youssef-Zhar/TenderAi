@@ -247,7 +247,7 @@ export default function Analysis() {
                     ['Verified evidence', structured.verified_evidence_count],
                     ['Rejected evidence', structured.rejected_evidence_count],
                     ['Ambiguous evidence', structured.ambiguous_evidence_count],
-                    ['Corrected pages', structured.corrected_page_count],
+                    ['Corrected evidence page references', structured.corrected_page_count],
                   ].map(([label, value]) => (
                     <div key={label} className="rounded-lg bg-background p-3">
                       <p className="text-xs text-muted">{label}</p>
