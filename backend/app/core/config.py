@@ -3,6 +3,7 @@ Centralized application settings using pydantic-settings.
 """
 
 from pathlib import Path
+import re
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from urllib.parse import urlsplit
 
@@ -29,6 +30,11 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     # Shared rate-limit storage (leave empty for single-process local development).
     redis_url: str = ""
+    # Local OCR fallback for scanned or image-heavy PDF pages.
+    ocr_languages: str = "fra+ara+eng"
+    ocr_dpi: int = 250
+    ocr_min_text_chars: int = 80
+    ocr_tessdata: str = ""
     # Authentication / JWT
     secret_key: str = ""
     jwt_algorithm: str = "HS256"
@@ -48,6 +54,13 @@ def validate_settings() -> None:
             raise RuntimeError(f"{name} must be configured.")
     if not 1 <= settings.db_port <= 65535:
         raise RuntimeError("DB_PORT must be between 1 and 65535.")
+
+    if not 150 <= settings.ocr_dpi <= 400:
+        raise RuntimeError("OCR_DPI must be between 150 and 400.")
+    if not 0 <= settings.ocr_min_text_chars <= 1000:
+        raise RuntimeError("OCR_MIN_TEXT_CHARS must be between 0 and 1000.")
+    if not re.fullmatch(r"[a-z]{3}(?:\+[a-z]{3})*", settings.ocr_languages):
+        raise RuntimeError("OCR_LANGUAGES must be Tesseract language codes separated by +.")
 
     redis_url = settings.redis_url.strip()
     if redis_url:
