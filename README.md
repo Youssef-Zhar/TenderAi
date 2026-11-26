@@ -481,7 +481,7 @@ Registration and login have rate limits configured in the backend.
 |---|---|---|---|
 | `POST` | `/api/v1/tenders/` | Create a tender manually | Required |
 | `GET` | `/api/v1/tenders/` | List the current user's tenders | Required |
-| `GET` | `/api/v1/tenders/{tender_id}` | Retrieve one owned tender | Required |
+| `GET` | `/api/v1/tenders/{tender_id}` | Retrieve one owned tender with conditions, documents, criteria, and evidence | Required |
 | `PUT` | `/api/v1/tenders/{tender_id}` | Replace/update tender fields | Required |
 | `DELETE` | `/api/v1/tenders/{tender_id}` | Delete an owned tender | Required |
 | `POST` | `/api/v1/tenders/analyze-pdf` | Upload and analyse a PDF (native text + local OCR fallback) | Required |
@@ -690,7 +690,7 @@ The following are known development areas, not claims of already implemented fun
 - **Proxy configuration:** define trusted proxy behavior before deployment behind a reverse proxy.
 - **Frontend scope:** the React application currently includes authentication, dashboard data, tender listing/creation/deletion, and PDF analysis. Editing tender records and richer reporting remain future work.
 - **Production deployment:** no production hosting configuration is defined in this repository.
-- **API shape:** tender detail responses currently expose the main tender record; related conditions, documents, criteria, and evidence are saved in separate tables and are not yet presented through a dedicated expanded-detail endpoint.
+- **Tender details UI:** saved records can load their persisted conditions, required documents, evaluation criteria, and verified source evidence on demand from the Tenders page.
 - **Observability:** production-grade structured logging, metrics, and monitoring need further work.
 
 Potential next milestones include stronger extraction coverage for guarantees and other financial fields, more end-to-end PDF fixtures with ground-truth expectations, expanded read APIs for related records, and a production deployment architecture.
