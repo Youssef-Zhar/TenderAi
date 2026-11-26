@@ -64,14 +64,16 @@ export default function Dashboard() {
     }
   }, [fetchTenders, isAuthenticated])
 
+  const visibleTenders = isAuthenticated ? tenders : []
+
   const summary = useMemo(() => {
-    const budgetCount = tenders.filter(
+    const budgetCount = visibleTenders.filter(
       (tender) => tender.estimated_budget !== null
     ).length
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
-    const upcoming = tenders
+    const upcoming = visibleTenders
       .filter((tender) => {
         if (!tender.deadline) return false
         const deadline = new Date(`${tender.deadline}T00:00:00`)
@@ -87,12 +89,12 @@ export default function Dashboard() {
       budgetCount,
       upcoming,
     }
-  }, [tenders])
+  }, [visibleTenders])
 
   const stats = [
     {
       label: 'My Tenders',
-      value: String(tenders.length),
+      value: String(visibleTenders.length),
       description: 'Records returned by the API',
       icon: FileText,
       color: 'text-primary',
@@ -195,7 +197,7 @@ export default function Dashboard() {
 
         {isAuthenticated && isLoading ? (
           <div className="p-8 text-center text-sm text-muted">Loading tenders...</div>
-        ) : tenders.length === 0 && !error ? (
+        ) : visibleTenders.length === 0 && !error ? (
           <div className="p-10 text-center">
             <FileText size={30} className="mx-auto text-muted" />
             <h3 className="mt-3 font-semibold text-white">No tenders yet</h3>
@@ -216,7 +218,7 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {tenders.map((tender) => (
+                {visibleTenders.map((tender) => (
                   <tr key={tender.id} className="transition hover:bg-surface-hover/50">
                     <td className="max-w-lg px-6 py-4">
                       <p className="text-sm font-medium text-white">{tender.title}</p>
