@@ -373,7 +373,6 @@ async def analyze_pdf(
                     pages_without_text=[int(page["page"]) for page in pages],
                     ocr_pages=ocr_pages,
                     ocr_failed_pages=ocr_failed_pages,
-        ocr_skipped_pages=ocr_skipped_pages,
                     ocr_skipped_pages=ocr_skipped_pages,
                 ),
             ),
@@ -396,6 +395,7 @@ async def analyze_pdf(
         pages_without_text=pages_without_text,
         ocr_pages=ocr_pages,
         ocr_failed_pages=ocr_failed_pages,
+        ocr_skipped_pages=ocr_skipped_pages,
     )
     evidence_cache = []
     analysis_started = perf_counter()
