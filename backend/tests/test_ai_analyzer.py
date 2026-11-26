@@ -882,7 +882,10 @@ async def test_extract_structured_tender_skips_invalid_section_and_continues(cap
     assert result.tender.title == "Titre valide de la section suivante"
     assert len(result.conditions) == 1
     assert result.conditions[0].condition_type == "administrative"
-    assert "Structured JSON validation failed for section 1/2 (ValidationError)" in caplog.text
+    assert (
+        "Structured JSON validation failed for section 1/2 (ValidationError)"
+        in caplog.text
+    )
     assert "loc=('conditions', 0, 'description')" in caplog.text
     assert "type=missing" in caplog.text
 
