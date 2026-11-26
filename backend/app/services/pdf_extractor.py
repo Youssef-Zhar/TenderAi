@@ -25,6 +25,7 @@ def extract_pdf_pages(
     ocr_pages: list[int] = []
     ocr_failed_pages: list[int] = []
     ocr_skipped_pages: list[int] = []
+    ocr_attempt_count = 0
 
     for page_index in range(pdf.page_count):
         page_number = page_index + 1
@@ -37,11 +38,12 @@ def extract_pdf_pages(
         )
 
         if needs_ocr and has_visual_content:
-            if len(ocr_pages) + len(ocr_failed_pages) >= ocr_max_pages:
+            if ocr_attempt_count >= ocr_max_pages:
                 ocr_skipped_pages.append(page_number)
                 pages.append({"page": page_number, "text": page_text})
                 continue
 
+            ocr_attempt_count += 1
             try:
                 text_page = page.get_textpage_ocr(
                     language=ocr_languages,
