@@ -45,7 +45,10 @@ export default function DashboardLayout() {
       />
 
       <div className="flex h-dvh min-w-0 flex-1 flex-col lg:ml-64">
-        <Header onMenuClick={() => setIsSidebarOpen(true)} />
+        <Header
+          onMenuClick={() => setIsSidebarOpen(true)}
+          isMenuOpen={isSidebarOpen}
+        />
 
         <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:p-6 lg:p-8">
           <Outlet />
