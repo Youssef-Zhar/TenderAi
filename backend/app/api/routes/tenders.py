@@ -322,12 +322,18 @@ async def analyze_pdf(
                     detail=f"The PDF must not exceed {MAX_PAGES} pages.",
                 )
 
-            pages, ocr_pages, ocr_failed_pages = extract_pdf_pages(
+            (
+                pages,
+                ocr_pages,
+                ocr_failed_pages,
+                ocr_skipped_pages,
+            ) = extract_pdf_pages(
                 pdf,
                 ocr_languages=settings.ocr_languages,
                 ocr_dpi=settings.ocr_dpi,
                 ocr_min_text_chars=settings.ocr_min_text_chars,
                 ocr_tessdata=settings.ocr_tessdata,
+                ocr_max_pages=settings.ocr_max_pages,
             )
 
             total_text_chars = sum(len(str(page["text"])) for page in pages)
@@ -367,6 +373,8 @@ async def analyze_pdf(
                     pages_without_text=[int(page["page"]) for page in pages],
                     ocr_pages=ocr_pages,
                     ocr_failed_pages=ocr_failed_pages,
+        ocr_skipped_pages=ocr_skipped_pages,
+                    ocr_skipped_pages=ocr_skipped_pages,
                 ),
             ),
         )
