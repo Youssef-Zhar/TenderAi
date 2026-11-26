@@ -18,6 +18,10 @@ def set_valid_settings(monkeypatch):
         "openrouter_model": "",
         "openrouter_base_url": "https://openrouter.ai/api/v1",
         "redis_url": "",
+        "ocr_languages": "fra+ara+eng",
+        "ocr_dpi": 250,
+        "ocr_min_text_chars": 80,
+        "ocr_tessdata": "",
     }
 
     for name, value in valid_values.items():
@@ -206,5 +210,32 @@ def test_validate_settings_rejects_invalid_redis_url(monkeypatch, redis_url):
 def test_validate_settings_accepts_valid_redis_url(monkeypatch, redis_url):
     set_valid_settings(monkeypatch)
     monkeypatch.setattr(config.settings, "redis_url", redis_url)
+
+    config.validate_settings()
+
+
+
+@pytest.mark.parametrize("dpi", [149, 401])
+def test_validate_settings_rejects_invalid_ocr_dpi(monkeypatch, dpi):
+    set_valid_settings(monkeypatch)
+    monkeypatch.setattr(config.settings, "ocr_dpi", dpi)
+
+    with pytest.raises(RuntimeError, match="OCR_DPI"):
+        config.validate_settings()
+
+
+@pytest.mark.parametrize("languages", ["", "fra+eng+", "english", "fra;eng"])
+def test_validate_settings_rejects_invalid_ocr_languages(monkeypatch, languages):
+    set_valid_settings(monkeypatch)
+    monkeypatch.setattr(config.settings, "ocr_languages", languages)
+
+    with pytest.raises(RuntimeError, match="OCR_LANGUAGES"):
+        config.validate_settings()
+
+
+def test_validate_settings_accepts_configured_ocr_languages(monkeypatch):
+    set_valid_settings(monkeypatch)
+    monkeypatch.setattr(config.settings, "ocr_languages", "fra+ara+eng")
+    monkeypatch.setattr(config.settings, "ocr_dpi", 300)
 
     config.validate_settings()
