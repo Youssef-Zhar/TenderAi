@@ -25,8 +25,8 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-border bg-surface">
-      <div className="flex h-20 items-center gap-3 border-b border-border px-6">
+    <aside className="flex h-dvh w-64 shrink-0 flex-col overflow-hidden border-r border-border bg-surface">
+      <div className="flex h-20 shrink-0 items-center gap-3 border-b border-border px-6">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
           <ShieldCheck size={23} className="text-white" />
         </div>
@@ -38,7 +38,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 space-y-2 px-4 py-7">
+      <nav className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-4 py-7">
         <p className="mb-4 px-3 text-[10px] font-bold tracking-[0.15em] text-muted">
           WORKSPACE
         </p>
@@ -63,7 +63,7 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t border-border p-4">
+      <div className="shrink-0 border-t border-border p-4">
         {user ? (
           <>
             <div className="mb-3 flex items-center gap-3 rounded-lg p-2">
