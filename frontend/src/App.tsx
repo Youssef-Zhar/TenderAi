@@ -11,11 +11,12 @@ function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
 
-      <Route element={<ProtectedRoute />}>
-        <Route element={<DashboardLayout />}>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/tenders" element={<Tenders />} />
+      <Route element={<DashboardLayout />}>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/tenders" element={<Tenders />} />
+
+        <Route element={<ProtectedRoute />}>
           <Route path="/analysis" element={<Analysis />} />
         </Route>
       </Route>
