@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { FilePlus2, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react'
 import { getApiErrorMessage } from '../lib/api'
-import { tenderService, type Tender } from '../services/tenders'
+import { tenderService, type Tender, type TenderDetail } from '../services/tenders'
 
 function renderMarkdown(source: string): string {
   const escapeHtml = (value: string) =>
@@ -104,6 +104,88 @@ function renderMarkdown(source: string): string {
 
   return output.join('')
 }
+function TenderDetailSections({ detail }: { detail: TenderDetail }) {
+  const hasDetails =
+    detail.conditions.length > 0 ||
+    detail.documents.length > 0 ||
+    detail.criteria.length > 0 ||
+    detail.evidence.length > 0
+
+  if (!hasDetails) {
+    return <p className="text-sm text-muted">No conditions, documents, criteria, or evidence were saved for this tender.</p>
+  }
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-2">
+      {detail.conditions.length > 0 && (
+        <section>
+          <h4 className="font-semibold text-white">Conditions ({detail.conditions.length})</h4>
+          <ul className="mt-2 space-y-2">
+            {detail.conditions.map((item) => (
+              <li key={item.id} className="rounded-lg bg-background p-3">
+                <p className="text-xs font-semibold uppercase text-primary">{item.condition_type}</p>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-white/85">{item.description}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {detail.documents.length > 0 && (
+        <section>
+          <h4 className="font-semibold text-white">Required documents ({detail.documents.length})</h4>
+          <ul className="mt-2 space-y-2">
+            {detail.documents.map((item) => (
+              <li key={item.id} className="rounded-lg bg-background p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-white">{item.name}</p>
+                  <span className="text-xs text-muted">{item.is_mandatory ? 'Mandatory' : 'Optional'}</span>
+                </div>
+                {item.description && <p className="mt-1 text-sm text-white/75">{item.description}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {detail.criteria.length > 0 && (
+        <section>
+          <h4 className="font-semibold text-white">Evaluation criteria ({detail.criteria.length})</h4>
+          <ul className="mt-2 space-y-2">
+            {detail.criteria.map((item) => (
+              <li key={item.id} className="rounded-lg bg-background p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-white">{item.name}</p>
+                  {item.weight !== null && <span className="text-xs text-primary">Weight: {item.weight}</span>}
+                </div>
+                {item.description && <p className="mt-1 text-sm text-white/75">{item.description}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {detail.evidence.length > 0 && (
+        <section>
+          <h4 className="font-semibold text-white">Source evidence ({detail.evidence.length})</h4>
+          <ul className="mt-2 space-y-2">
+            {detail.evidence.map((item) => (
+              <li key={item.id} className="rounded-lg bg-background p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase text-primary">{item.field_name.replaceAll('_', ' ')}</p>
+                  <span className="text-xs text-muted">{item.page_number === null ? 'Page unknown' : `Page ${item.page_number}`}</span>
+                </div>
+                {item.extracted_value && <p className="mt-1 text-sm font-medium text-white">{item.extracted_value}</p>}
+                {item.source_text && <blockquote className="mt-2 border-l-2 border-primary/50 pl-3 text-sm italic text-white/70">{item.source_text}</blockquote>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  )
+}
+
 export default function Tenders() {
   const [tenders, setTenders] = useState<Tender[]>([])
   const [title, setTitle] = useState('')
@@ -116,6 +198,9 @@ export default function Tenders() {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [expandedTenderId, setExpandedTenderId] = useState<number | null>(null)
+  const [detailsById, setDetailsById] = useState<Record<number, TenderDetail>>({})
+  const [loadingDetailId, setLoadingDetailId] = useState<number | null>(null)
 
   const fetchTenders = useCallback(async () => {
     try {
@@ -170,6 +255,28 @@ export default function Tenders() {
     }
   }
 
+  async function handleToggleDetails(tenderId: number) {
+    if (expandedTenderId === tenderId) {
+      setExpandedTenderId(null)
+      return
+    }
+
+    setExpandedTenderId(tenderId)
+    if (detailsById[tenderId]) return
+
+    setLoadingDetailId(tenderId)
+    setError('')
+    try {
+      const detail = await tenderService.get(tenderId)
+      setDetailsById((current) => ({ ...current, [tenderId]: detail }))
+    } catch (loadError) {
+      setExpandedTenderId(null)
+      setError(getApiErrorMessage(loadError))
+    } finally {
+      setLoadingDetailId(null)
+    }
+  }
+
   async function handleDelete(tender: Tender) {
     if (!window.confirm(`Delete "${tender.title}"? This cannot be undone.`)) return
 
@@ -178,6 +285,12 @@ export default function Tenders() {
     try {
       await tenderService.remove(tender.id)
       setTenders((current) => current.filter((item) => item.id !== tender.id))
+      setDetailsById((current) => {
+        const next = { ...current }
+        delete next[tender.id]
+        return next
+      })
+      if (expandedTenderId === tender.id) setExpandedTenderId(null)
       setNotice('Tender deleted.')
     } catch (deleteError) {
       setError(getApiErrorMessage(deleteError))
@@ -326,6 +439,23 @@ export default function Tenders() {
                     {tender.estimated_budget !== null ? ` · Budget: ${tender.estimated_budget}${tender.currency ? ` ${tender.currency}` : ' (currency unknown)'}` : ''}
                     {tender.deadline_text ? ` · Deadline: ${tender.deadline_text}` : tender.deadline ? ` · Deadline: ${tender.deadline}${tender.deadline_time ? ` ${tender.deadline_time.slice(0, 5)}` : ''}` : ''}
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => void handleToggleDetails(tender.id)}
+                    aria-expanded={expandedTenderId === tender.id}
+                    className="mt-3 rounded-lg border border-border px-3 py-2 text-xs font-medium text-primary transition hover:bg-background"
+                  >
+                    {expandedTenderId === tender.id ? 'Hide extracted details' : 'View extracted details'}
+                  </button>
+                  {expandedTenderId === tender.id && (
+                    <div className="mt-3 rounded-lg border border-border bg-background/40 p-4">
+                      {loadingDetailId === tender.id ? (
+                        <p className="text-sm text-muted">Loading extracted details...</p>
+                      ) : detailsById[tender.id] ? (
+                        <TenderDetailSections detail={detailsById[tender.id]} />
+                      ) : null}
+                    </div>
+                  )}
                 </div>
                 <button
                   type="button"

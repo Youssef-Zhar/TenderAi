@@ -836,6 +836,86 @@ def test_get_tender_with_authentication(
     assert response.status_code == 200
     assert response.json()["title"] == tender.title
 
+def test_get_tender_returns_all_persisted_analysis_details(
+    client, db_session, test_user, auth_headers
+):
+    create_test_tenders(db_session, owner_id=test_user.id, count=1)
+    tender = db_session.query(Tender).first()
+    db_session.add_all(
+        [
+            TenderCondition(
+                tender_id=tender.id,
+                condition_type="financial",
+                description="Minimum turnover requirement",
+            ),
+            TenderDocument(
+                tender_id=tender.id,
+                name="Company registration certificate",
+                description="A valid copy",
+                is_mandatory=True,
+            ),
+            TenderCriterion(
+                tender_id=tender.id,
+                name="Technical quality",
+                description="Technical proposal assessment",
+                weight=70.0,
+            ),
+            TenderEvidence(
+                tender_id=tender.id,
+                field_name="estimated_budget",
+                extracted_value="250000 MAD",
+                page_number=3,
+                source_text="The estimated budget is 250,000 MAD.",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/api/v1/tenders/{tender.id}",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["conditions"] == [
+        {
+            "id": body["conditions"][0]["id"],
+            "condition_type": "financial",
+            "description": "Minimum turnover requirement",
+        }
+    ]
+    assert body["documents"][0]["name"] == "Company registration certificate"
+    assert body["documents"][0]["is_mandatory"] is True
+    assert body["criteria"][0]["name"] == "Technical quality"
+    assert body["criteria"][0]["weight"] == 70.0
+    assert body["evidence"][0]["field_name"] == "estimated_budget"
+    assert body["evidence"][0]["page_number"] == 3
+    assert body["evidence"][0]["source_text"] == (
+        "The estimated budget is 250,000 MAD."
+    )
+    assert "owner_id" not in body
+
+
+def test_get_tender_returns_empty_detail_arrays_when_no_analysis_records(
+    client, db_session, test_user, auth_headers
+):
+    create_test_tenders(db_session, owner_id=test_user.id, count=1)
+    tender = db_session.query(Tender).first()
+
+    response = client.get(
+        f"/api/v1/tenders/{tender.id}",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["conditions"] == []
+    assert body["documents"] == []
+    assert body["criteria"] == []
+    assert body["evidence"] == []
+
+
 def test_create_tender_with_authentication(
     client, db_session, test_user, auth_headers
 ):

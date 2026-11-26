@@ -39,7 +39,15 @@ from app.schemas.analysis import (
     AnalyzeResponse,
     StructuredTenderAnalysis,
 )
-from app.schemas.tender import TenderCreate, TenderResponse
+from app.schemas.tender import (
+    TenderConditionResponse,
+    TenderCreate,
+    TenderCriterionResponse,
+    TenderDetailResponse,
+    TenderDocumentResponse,
+    TenderEvidenceResponse,
+    TenderResponse,
+)
 from app.services.ai_analyzer import (
     AIConnectionError,
     AIStatusError,
@@ -189,19 +197,64 @@ def list_tenders(
 
 @router.get(
     "/{tender_id}",
-    response_model=TenderResponse,
+    response_model=TenderDetailResponse,
     status_code=status.HTTP_200_OK,
-    summary="Retrieve a single tender",
+    summary="Retrieve a tender with its extracted details",
 )
 def get_tender(
     tender_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> TenderResponse:
-    """Return one tender belonging to the authenticated user."""
+) -> TenderDetailResponse:
+    """Return an owned tender and its persisted analysis records."""
 
     tender = _get_or_404(db, tender_id, current_user)
-    return TenderResponse.model_validate(tender)
+    base_data = TenderResponse.model_validate(tender).model_dump()
+
+    conditions = (
+        db.query(TenderCondition)
+        .filter(TenderCondition.tender_id == tender.id)
+        .order_by(TenderCondition.id.asc())
+        .all()
+    )
+    documents = (
+        db.query(TenderDocument)
+        .filter(TenderDocument.tender_id == tender.id)
+        .order_by(TenderDocument.id.asc())
+        .all()
+    )
+    criteria = (
+        db.query(TenderCriterion)
+        .filter(TenderCriterion.tender_id == tender.id)
+        .order_by(TenderCriterion.id.asc())
+        .all()
+    )
+    evidence = (
+        db.query(TenderEvidence)
+        .filter(TenderEvidence.tender_id == tender.id)
+        .order_by(TenderEvidence.id.asc())
+        .all()
+    )
+
+    return TenderDetailResponse(
+        **base_data,
+        conditions=[
+            TenderConditionResponse.model_validate(item)
+            for item in conditions
+        ],
+        documents=[
+            TenderDocumentResponse.model_validate(item)
+            for item in documents
+        ],
+        criteria=[
+            TenderCriterionResponse.model_validate(item)
+            for item in criteria
+        ],
+        evidence=[
+            TenderEvidenceResponse.model_validate(item)
+            for item in evidence
+        ],
+    )
 
 
 @router.put(

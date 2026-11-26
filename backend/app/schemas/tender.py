@@ -32,3 +32,47 @@ class TenderResponse(TenderInput):
 
     id: int
     analysis_report: str | None = None
+
+
+
+class TenderConditionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    condition_type: str
+    description: str
+
+
+class TenderDocumentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    description: str | None = None
+    is_mandatory: bool
+
+
+class TenderCriterionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    description: str | None = None
+    weight: float | None = None
+
+
+class TenderEvidenceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    field_name: str
+    extracted_value: str | None = None
+    page_number: int | None = None
+    source_text: str | None = None
+
+
+class TenderDetailResponse(TenderResponse):
+    conditions: list[TenderConditionResponse] = Field(default_factory=list)
+    documents: list[TenderDocumentResponse] = Field(default_factory=list)
+    criteria: list[TenderCriterionResponse] = Field(default_factory=list)
+    evidence: list[TenderEvidenceResponse] = Field(default_factory=list)
