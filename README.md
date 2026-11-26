@@ -398,6 +398,7 @@ The backend reads its settings from `backend/.env` and environment variables. Ne
 | `OCR_LANGUAGES` | Tesseract language codes separated by `+` | Optional; default is `fra+ara+eng` |
 | `OCR_DPI` | OCR rendering resolution; accepted range is 150–400 | Optional; default is 250 |
 | `OCR_MIN_TEXT_CHARS` | Pages below this native-text length may use OCR when they contain images/drawings | Optional; default is 80 |
+| `OCR_MAX_PAGES` | Maximum number of pages OCR will attempt per upload | Optional; default is 50 |
 | `OCR_TESSDATA` | Optional path to the Tesseract `tessdata` directory | Optional |
 
 The example file contains placeholders only. Replace every placeholder with local values before running the application. Do not use example credentials in a deployed environment.
@@ -595,7 +596,7 @@ The current upload endpoint enforces these limits:
 | Corrupted/unreadable PDFs | Rejected |
 | Selectable text | Required for AI analysis |
 
-**OCR is not implemented yet.** If a PDF contains no selectable text, the API returns an `ocr_required` analysis status and indicates that OCR processing is required but unsupported. For mixed PDFs, pages without selectable text are listed in `analysis.metadata.pages_without_text` and the result is marked `analysis_partial`; those page contents are excluded from the AI analysis. Scanned/image-only documents therefore need OCR before they can be analysed.
+TenderAI uses local Tesseract OCR as a fallback for scanned pages and image-heavy pages with sparse native text. OCR is attempted only when a page has image/drawing content and its native text is below `OCR_MIN_TEXT_CHARS`. Successful OCR page numbers are listed in `analysis.metadata.ocr_pages`; failed and page-limit-skipped pages are listed in `ocr_failed_pages` and `ocr_skipped_pages`. Pages still lacking text appear in `pages_without_text`, and mixed documents are marked `analysis_partial`. Install Tesseract and the configured language data on the backend host; OCR is bounded by `OCR_MAX_PAGES` per upload.
 
 The API also limits input size and document length to protect processing resources. A PDF that passes validation can still produce incomplete AI output.
 
@@ -722,7 +723,7 @@ This section records the implementation state reached during the current develop
 - Added structured Pydantic extraction for tender details, conditions, administrative documents, evaluation criteria, evidence, and extraction conflicts.
 - Added evidence verification against the original extracted PDF text, including rejection of unsupported or mismatched evidence.
 - Added analysis metadata for partial/degraded results, truncation, fallback use, rejected/ambiguous evidence, and extraction conflicts.
-- Added PDF input safeguards: 10 MB file-level limit, 11 MiB total request-body limit for the PDF-analysis endpoint (enforced by ASGI middleware before multipart parsing), 200-page limit, 300,000-character extracted-text limit, PDF signature validation, encrypted-PDF rejection, and an explicit OCR-required response for image-only PDFs.
+- Added PDF input safeguards: 10 MB file-level limit, 11 MiB total request-body limit for the PDF-analysis endpoint (enforced by ASGI middleware before multipart parsing), 200-page limit, 300,000-character extracted-text limit, PDF signature validation, encrypted-PDF rejection, and bounded local OCR fallback for scanned pages.
 - Added deadline parsing with a conservative fallback that looks for explicitly labelled submission-deadline lines.
 - Added authenticated tender CRUD, user ownership filtering, database rollback on failed persistence, and pagination.
 - Added account registration/login, Argon2id password hashing, HS256 JWT access tokens, active-user checks, and login/registration rate limits.
@@ -753,7 +754,7 @@ These security-configuration changes are now part of `main`.
 
 The development audit has identified items to address or explicitly configure before production:
 
-- The current SlowAPI backend uses in-process `memory://` storage. Multiple workers/instances need a shared rate-limit store such as Redis.
+- Redis-backed rate limiting is configured through `REDIS_URL`; without it, local development uses in-process `memory://` storage.
 - Client IP handling must be configured carefully behind a trusted reverse proxy.
 - CORS is configured through CORS_ORIGINS; update this allowlist when the frontend is hosted on a different origin.
 - The evidence database table stores accepted evidence fields and source quotations, but not a full history of rejected candidates or raw model structured responses.
