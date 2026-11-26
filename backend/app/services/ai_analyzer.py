@@ -658,6 +658,8 @@ def _clean_int(value: object, minimum: int) -> int | None:
         return None
     if isinstance(value, int):
         number = value
+    elif isinstance(value, Decimal) and value == value.to_integral_value():
+        number = int(value)
     elif isinstance(value, float) and value.is_integer():
         number = int(value)
     else:
@@ -667,7 +669,7 @@ def _clean_int(value: object, minimum: int) -> int | None:
 
 def _clean_positive_float(value: object) -> float | None:
     """Return a finite native positive float or None."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
         return None
 
     number = float(value)
@@ -849,7 +851,7 @@ def _normalise_evidence_values(evidence: object) -> object:
     normalised_items: list[object] = []
     for item in evidence:
         value = item.get("extracted_value") if isinstance(item, dict) else None
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
             item = dict(item)
             item["extracted_value"] = str(value)
         normalised_items.append(item)
@@ -894,6 +896,12 @@ def _normalise_structured_payload(data: object) -> object:
     tender_copy["processor"] = (
         processor.strip()
         if isinstance(processor, str) and processor.strip()
+        else None
+    )
+    currency = tender_copy.get("currency")
+    tender_copy["currency"] = (
+        currency.strip()
+        if isinstance(currency, str) and currency.strip()
         else None
     )
     tender_copy["accessories"] = _clean_accessories(
@@ -1532,7 +1540,9 @@ async def extract_structured_tender(
                 )
 
             try:
-                data = json.loads(_strip_markdown_fences(content))
+                data = json.loads(
+                    _strip_markdown_fences(content), parse_float=Decimal
+                )
                 data = _normalise_structured_payload(data)
                 part = StructuredTenderAnalysis.model_validate(data)
             except (json.JSONDecodeError, ValueError) as exc:
@@ -1647,7 +1657,7 @@ async def extract_structured_tender(
     merged.ambiguous_evidence_count = verification_counts["ambiguous"]
 
     unique_conflicts: dict[
-        tuple[str, str | int | float | None, str | int | float | None],
+        tuple[str, str | int | float | Decimal | None, str | int | float | Decimal | None],
         ExtractionConflictItem,
     ] = {}
     for conflict in merged.extraction_conflicts:
