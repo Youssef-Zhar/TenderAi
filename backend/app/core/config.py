@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     # Browser frontend origins allowed to call the API.
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # Shared rate-limit storage (leave empty for single-process local development).
+    redis_url: str = ""
     # Authentication / JWT
     secret_key: str = ""
     jwt_algorithm: str = "HS256"
@@ -46,6 +48,18 @@ def validate_settings() -> None:
             raise RuntimeError(f"{name} must be configured.")
     if not 1 <= settings.db_port <= 65535:
         raise RuntimeError("DB_PORT must be between 1 and 65535.")
+
+    redis_url = settings.redis_url.strip()
+    if redis_url:
+        redis = urlsplit(redis_url)
+        if (
+            redis.scheme not in {"redis", "rediss"}
+            or not redis.hostname
+            or redis.fragment
+        ):
+            raise RuntimeError(
+                "REDIS_URL must be a valid redis:// or rediss:// URL."
+            )
 
     if settings.openrouter_api_key and not settings.openrouter_api_key.strip():
         raise RuntimeError("OPENROUTER_API_KEY cannot contain only whitespace.")
