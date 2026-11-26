@@ -85,7 +85,7 @@ export default function Dashboard() {
 
   const stats = [
     {
-      label: 'My Tenders',
+      label: 'Public Tenders',
       value: String(tenders.length),
       description: 'Records returned by the API',
       icon: FileText,
@@ -116,7 +116,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold text-white">Overview</h1>
           <p className="mt-2 text-sm text-muted">
-            Live procurement records from your TenderAI account.
+            Live public procurement records available to everyone.
           </p>
         </div>
 
@@ -170,9 +170,9 @@ export default function Dashboard() {
       <section className="overflow-hidden rounded-xl border border-border bg-surface">
         <div className="flex items-center justify-between border-b border-border px-6 py-5">
           <div>
-            <h2 className="font-semibold text-white">Your Recent Tenders</h2>
+            <h2 className="font-semibold text-white">Recent Public Tenders</h2>
             <p className="mt-1 text-xs text-muted">
-              Latest records belonging to your account
+              Latest published tender records
             </p>
           </div>
           <span className="text-xs text-muted">Up to 20 records</span>
@@ -185,7 +185,7 @@ export default function Dashboard() {
             <FileText size={30} className="mx-auto text-muted" />
             <h3 className="mt-3 font-semibold text-white">No tenders yet</h3>
             <p className="mt-2 text-sm text-muted">
-              Your saved tenders will appear here after you create one or analyse a PDF.
+              Published tender records will appear here when available.
             </p>
           </div>
         ) : (
