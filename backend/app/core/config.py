@@ -51,11 +51,19 @@ def validate_settings() -> None:
 
     redis_url = settings.redis_url.strip()
     if redis_url:
-        redis = urlsplit(redis_url)
+        try:
+            redis = urlsplit(redis_url)
+            redis_port = redis.port
+        except ValueError as exc:
+            raise RuntimeError(
+                "REDIS_URL must be a valid redis:// or rediss:// URL."
+            ) from exc
+
         if (
             redis.scheme not in {"redis", "rediss"}
             or not redis.hostname
             or redis.fragment
+            or (redis_port is not None and not 1 <= redis_port <= 65535)
         ):
             raise RuntimeError(
                 "REDIS_URL must be a valid redis:// or rediss:// URL."
