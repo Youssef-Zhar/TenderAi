@@ -1249,6 +1249,7 @@ def test_upload_scanned_pdf_uses_ocr_extracted_text(
                 [{"page": 1, "text": "OCR extracted tender text"}],
                 [1],
                 [],
+                [],
             ),
         ),
         patch(
@@ -1284,7 +1285,7 @@ def test_upload_scanned_pdf_reports_ocr_failure(
 ):
     with patch(
         "app.api.routes.tenders.extract_pdf_pages",
-        return_value=([{"page": 1, "text": ""}], [], [1]),
+        return_value=([{"page": 1, "text": ""}], [], [1], []),
     ):
         response = client.post(
             "/api/v1/tenders/analyze-pdf",
