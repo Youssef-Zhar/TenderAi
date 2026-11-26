@@ -57,6 +57,9 @@ export interface AnalysisResponse {
       extraction_conflict_count: number
       degradation_reasons: string[]
       pages_without_text: number[]
+      ocr_pages: number[]
+      ocr_failed_pages: number[]
+      ocr_skipped_pages: number[]
     }
   }
 }
