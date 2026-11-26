@@ -23,6 +23,7 @@ def set_valid_settings(monkeypatch):
         "ocr_min_text_chars": 80,
         "ocr_max_pages": 50,
         "ocr_tessdata": "",
+        "log_level": "INFO",
     }
 
     for name, value in valid_values.items():
@@ -249,4 +250,14 @@ def test_validate_settings_rejects_invalid_ocr_page_limit(monkeypatch, max_pages
     monkeypatch.setattr(config.settings, "ocr_max_pages", max_pages)
 
     with pytest.raises(RuntimeError, match="OCR_MAX_PAGES"):
+        config.validate_settings()
+
+
+
+@pytest.mark.parametrize("level", ["TRACE", "VERBOSE", "", "123"])
+def test_validate_settings_rejects_invalid_log_level(monkeypatch, level):
+    set_valid_settings(monkeypatch)
+    monkeypatch.setattr(config.settings, "log_level", level)
+
+    with pytest.raises(RuntimeError, match="LOG_LEVEL"):
         config.validate_settings()
