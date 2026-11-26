@@ -93,6 +93,7 @@ class AnalysisMetadata(BaseModel):
     pages_without_text: list[int] = Field(default_factory=list)
     ocr_pages: list[int] = Field(default_factory=list)
     ocr_failed_pages: list[int] = Field(default_factory=list)
+    ocr_skipped_pages: list[int] = Field(default_factory=list)
 
 
 class AnalysisResult(BaseModel):
