@@ -2,7 +2,7 @@
 
 **AI-assisted public procurement (Appel d'Offres) analysis platform with a FastAPI backend and React dashboard.**
 
-TenderAI is a full-stack prototype for reviewing public procurement documents. Its FastAPI backend accepts text-based tender PDFs, extracts their text, generates a readable analysis and structured procurement data through OpenRouter, verifies extracted evidence against the source document, and stores tender records in MariaDB/MySQL. A React dashboard provides the initial user interface.
+TenderAI is a full-stack prototype for reviewing public procurement documents. Its FastAPI backend accepts tender PDFs, including scanned documents when local OCR is configured, extracts their text, generates a readable analysis and structured procurement data through OpenRouter, verifies extracted evidence against the source document, and stores tender records in MariaDB/MySQL. A React dashboard provides the initial user interface.
 
 > **Project status:** Active development / prototype. TenderAI is an analysis assistant, not an official procurement authority, legal adviser, or substitute for checking the original tender dossier. AI output can be incomplete or incorrect and must always be reviewed against the source PDF.
 
@@ -158,7 +158,7 @@ The exact output depends on the configured provider/model and the content and qu
 | Database | MariaDB / MySQL |
 | Database driver | PyMySQL |
 | Migrations | Alembic |
-| PDF text extraction | PyMuPDF |
+| PDF text extraction and OCR | PyMuPDF with local Tesseract OCR fallback |
 | AI provider integration | OpenRouter API |
 | HTTP client | HTTPX |
 | Password hashing | Argon2id via argon2-cffi |
@@ -394,8 +394,24 @@ The backend reads its settings from `backend/.env` and environment variables. Ne
 | `SECRET_KEY` | JWT signing secret; use a random value of at least 32 characters | Yes |
 | `JWT_ALGORITHM` | JWT algorithm; currently HS256 only | Yes |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Access-token lifetime; accepted range is 1–60 minutes | Optional; default is 30 |
+| `REDIS_URL` | Shared rate-limit storage; use `rediss://` for TLS providers | Optional locally; recommended in production |
+| `OCR_LANGUAGES` | Tesseract language codes separated by `+` | Optional; default is `fra+ara+eng` |
+| `OCR_DPI` | OCR rendering resolution; accepted range is 150–400 | Optional; default is 250 |
+| `OCR_MIN_TEXT_CHARS` | Pages below this native-text length may use OCR when they contain images/drawings | Optional; default is 80 |
+| `OCR_TESSDATA` | Optional path to the Tesseract `tessdata` directory | Optional |
 
 The example file contains placeholders only. Replace every placeholder with local values before running the application. Do not use example credentials in a deployed environment.
+
+### Install local OCR support
+
+OCR runs locally through PyMuPDF's Tesseract integration; tender PDFs are not uploaded to a third-party OCR service. Install Tesseract on the machine running the backend and include the French (`fra`), Arabic (`ara`), and English (`eng`) language data files. On Ubuntu/Debian:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y tesseract-ocr tesseract-ocr-fra tesseract-ocr-ara tesseract-ocr-eng
+```
+
+On Windows, install Tesseract OCR with the required language data and add its executable directory to `PATH`. If automatic language-data discovery does not work, set `OCR_TESSDATA` to the directory containing the `.traineddata` files. If Tesseract is unavailable, the API preserves any native PDF text and reports pages where OCR failed; image-only PDFs remain in `ocr_required` status.
 
 ---
 
@@ -467,7 +483,7 @@ Registration and login have rate limits configured in the backend.
 | `GET` | `/api/v1/tenders/{tender_id}` | Retrieve one owned tender | Required |
 | `PUT` | `/api/v1/tenders/{tender_id}` | Replace/update tender fields | Required |
 | `DELETE` | `/api/v1/tenders/{tender_id}` | Delete an owned tender | Required |
-| `POST` | `/api/v1/tenders/analyze-pdf` | Upload and analyse a PDF | Required |
+| `POST` | `/api/v1/tenders/analyze-pdf` | Upload and analyse a PDF (native text + local OCR fallback) | Required |
 
 Tender listing supports:
 
@@ -550,7 +566,7 @@ Current security-related implementation includes:
 
 ### Important deployment considerations
 
-- The current rate limiter uses in-process memory storage. Its counters are not shared across multiple workers or application instances and reset when the process restarts. Use a shared store such as Redis and review trusted-proxy/client-IP configuration before a multi-worker or multi-instance production deployment.
+- Redis-backed rate-limit storage is available through `REDIS_URL`. Configure a shared Redis instance for multi-worker or multi-instance deployments; the local `memory://` fallback is only suitable for single-process development.
 - Configure trusted reverse-proxy headers carefully. Do not trust arbitrary forwarded headers from untrusted clients.
 - Configure CORS_ORIGINS as a JSON array of exact trusted browser origins. The backend enables CORS middleware without allowing arbitrary origins or cookies.
 - Use HTTPS in deployed environments.
@@ -665,18 +681,18 @@ The current CI workflow:
 
 The following are known development areas, not claims of already implemented functionality:
 
-- **OCR:** scanned PDFs and image-only pages are not processed yet.
+- **OCR availability:** scanned pages require Tesseract and the configured language data to be installed on the host.
 - **Structured extraction completeness:** the model can omit facts or return incomplete fields even when the narrative report mentions them.
 - **Evidence coverage:** unsupported or mismatched evidence is rejected; additional deterministic extraction and regression tests may improve coverage for high-value fields.
 - **Conflict handling:** conflicting values are recorded for review; the system does not automatically resolve every contradiction in a tender dossier.
-- **Rate-limit storage:** replace in-memory storage with shared storage for multi-worker/production deployments.
+- **Rate-limit deployment:** set `REDIS_URL` to a shared Redis service in production; without it, the limiter uses local in-memory storage.
 - **Proxy configuration:** define trusted proxy behavior before deployment behind a reverse proxy.
 - **Frontend scope:** the React application currently includes authentication, dashboard data, tender listing/creation/deletion, and PDF analysis. Editing tender records and richer reporting remain future work.
 - **Production deployment:** no production hosting configuration is defined in this repository.
 - **API shape:** tender detail responses currently expose the main tender record; related conditions, documents, criteria, and evidence are saved in separate tables and are not yet presented through a dedicated expanded-detail endpoint.
 - **Observability:** production-grade structured logging, metrics, and monitoring need further work.
 
-Potential next milestones include OCR integration, stronger extraction coverage for guarantees and other financial fields, more end-to-end PDF fixtures with ground-truth expectations, expanded read APIs for related records, shared rate-limit storage, and a deployment architecture.
+Potential next milestones include stronger extraction coverage for guarantees and other financial fields, more end-to-end PDF fixtures with ground-truth expectations, expanded read APIs for related records, and a production deployment architecture.
 
 ---
 
@@ -742,7 +758,7 @@ The development audit has identified items to address or explicitly configure be
 - CORS is configured through CORS_ORIGINS; update this allowlist when the frontend is hosted on a different origin.
 - The evidence database table stores accepted evidence fields and source quotations, but not a full history of rejected candidates or raw model structured responses.
 - Existing tender records may have a null owner because the ownership migration preserves legacy data; those records need a deliberate ownership/backfill policy.
-- OCR and a production hosting/deployment setup are not implemented in this repository.
+- A production hosting/deployment setup is not implemented in this repository.
 
 ### Known PDF test investigation
 
