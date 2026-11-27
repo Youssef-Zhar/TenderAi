@@ -812,6 +812,85 @@ async def test_extract_structured_tender_merges_multiple_chunks():
 
 
 @pytest.mark.asyncio
+async def test_extract_structured_tender_skips_invalid_section_and_continues(caplog):
+    from app.services import ai_analyzer
+    from app.schemas.analysis import AnalysisMetadata
+
+    metadata = AnalysisMetadata()
+    invalid_payload = {
+        "tender": {"title": "Titre de la section invalide"},
+        "conditions": [{"condition_type": "technical"}],
+        "documents": [],
+        "criteria": [],
+        "evidence": [],
+    }
+    valid_payload = {
+        "tender": {"title": "Titre valide de la section suivante"},
+        "conditions": [
+            {
+                "condition_type": "administrative",
+                "description": "Fournir une déclaration sur l'honneur.",
+            }
+        ],
+        "documents": [],
+        "criteria": [],
+        "evidence": [],
+    }
+    responses = iter([
+        (json.dumps(invalid_payload), "stop"),
+        (json.dumps(valid_payload), "stop"),
+    ])
+
+    async def fake_extract_chunk(client, chunk, index, total, status=None):
+        return f"Evidence for chunk {index}"
+
+    async def fake_call_openrouter(
+        client, system_prompt, user_message, max_tokens
+    ):
+        return next(responses)
+
+    caplog.set_level("ERROR", logger="app.services.ai_analyzer")
+
+    with (
+        patch.object(
+            ai_analyzer,
+            "split_document",
+            return_value=["invalid chunk", "valid chunk"],
+        ),
+        patch.object(
+            ai_analyzer,
+            "_extract_chunk",
+            side_effect=fake_extract_chunk,
+        ),
+        patch.object(
+            ai_analyzer,
+            "_call_openrouter",
+            side_effect=fake_call_openrouter,
+        ),
+        patch.object(
+            ai_analyzer,
+            "_open_client",
+            return_value=_fake_open_client(),
+        ),
+    ):
+        result = await ai_analyzer.extract_structured_tender(
+            "text for testing",
+            metadata=metadata,
+        )
+
+    assert metadata.structured_failed is True
+    assert result.tender.title == "Titre valide de la section suivante"
+    assert len(result.conditions) == 1
+    assert result.conditions[0].condition_type == "administrative"
+    assert (
+        "Structured JSON validation failed for section 1/2 (ValidationError)"
+        in caplog.text
+    )
+    assert "loc=('conditions', 0, 'description')" in caplog.text
+    assert "type=missing" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_analyze_tender_populates_shared_evidence_cache():
     from app.services import ai_analyzer
 

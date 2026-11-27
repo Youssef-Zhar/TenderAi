@@ -36,6 +36,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from pydantic import ValidationError
+
 
 
 from app.schemas.analysis import (
@@ -1364,9 +1366,10 @@ async def extract_structured_tender(
     """
     Extract structured tender data from each chunk and merge results.
 
-    When ``metadata`` is supplied, structured truncation and invalid JSON are
-    recorded as degradation outcomes and the safely validated data gathered so
-    far is returned instead of raising.  No unvalidated content is merged.
+    When ``metadata`` is supplied, structured truncation and invalid sections
+    are recorded as degradation outcomes. Invalid JSON/schema sections are
+    skipped so later chunks can still contribute validated data. No unvalidated
+    content is merged.
     """
     if not text.strip():
         raise ValueError("No text was provided for structured extraction.")
@@ -1552,9 +1555,32 @@ async def extract_structured_tender(
                     len(chunks),
                     type(exc).__name__,
                 )
+                if isinstance(exc, ValidationError):
+                    validation_errors = exc.errors(include_input=False)
+                    for error in validation_errors[:10]:
+                        logger.error(
+                            "Structured validation detail: section=%d/%d "
+                            "loc=%s type=%s msg=%s",
+                            index,
+                            len(chunks),
+                            error.get("loc"),
+                            error.get("type"),
+                            error.get("msg"),
+                        )
+                    if len(validation_errors) > 10:
+                        logger.error(
+                            "Structured validation detail: %d additional "
+                            "errors omitted for section %d/%d.",
+                            len(validation_errors) - 10,
+                            index,
+                            len(chunks),
+                        )
+
                 if metadata is not None:
                     metadata.structured_failed = True
-                    break
+                    # Chunks are validated independently. Discard this invalid
+                    # section, but continue so later valid sections are retained.
+                    continue
                 raise RuntimeError(
                     f"Structured extraction failed for section {index}/{len(chunks)}."
                 ) from exc
